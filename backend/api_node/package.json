@@ -1,0 +1,40 @@
+{
+  "name": "@eixoone/api-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "predev": "npm --prefix ../../packages/shared_contracts run build",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "prebuild": "npm --prefix ../../packages/shared_contracts run build",
+    "build": "tsc -p tsconfig.json",
+    "prelint": "npm --prefix ../../packages/shared_contracts run build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "pretypecheck": "npm --prefix ../../packages/shared_contracts run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "pretest": "npm --prefix ../../packages/shared_contracts run build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@eixoone/shared-contracts": "1.0.0",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/swagger": "^9.6.1",
+    "@fastify/swagger-ui": "^5.2.3",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.1",
+    "firebase-admin": "^13.6.0",
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.1.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

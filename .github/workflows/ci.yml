@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+jobs:
+  validate-monorepo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Node workspaces
+        run: npm ci
+
+      - name: Validate shared contracts, API and Firebase config
+        run: npm run validate
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.7
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: apps/mobile_flutter
+        run: flutter pub get
+
+      - name: Analyze Flutter app
+        working-directory: apps/mobile_flutter
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        working-directory: apps/mobile_flutter
+        run: flutter test
+
+      - name: Build Flutter web
+        working-directory: apps/mobile_flutter
+        run: flutter build web --release
+

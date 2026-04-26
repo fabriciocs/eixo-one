@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../core/config/app_config.dart';
 import '../core/firebase/firebase_bootstrap.dart';
 import '../core/theme/app_theme.dart';
 import 'router/app_router.dart';
@@ -16,7 +17,7 @@ class EixoOneApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'EixoOne',
+      title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

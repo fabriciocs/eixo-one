@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../design_system/tokens/app_breakpoints.dart';
+import '../../features/auth/presentation/controllers/auth_providers.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerWidget {
   const AppShell({
     super.key,
     required this.child,
@@ -23,8 +25,9 @@ class AppShell extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).uri.toString();
+    final session = ref.watch(authSessionProvider);
     final selectedIndex = _destinations.indexWhere(
       (destination) => location.startsWith(destination.route),
     );
@@ -45,9 +48,19 @@ class AppShell extends StatelessWidget {
               onDestinationSelected: (index) => context.go(_destinations[index].route),
               leading: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
-                child: Text(
-                  'EixoOne',
-                  style: Theme.of(context).textTheme.titleLarge,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EixoOne',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      session?.selectedOrganization?.name ?? 'Sem organizacao',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
               destinations: [

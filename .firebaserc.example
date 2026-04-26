@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "eixoone-dev"
+    "default": "eixoone-dev",
+    "dev": "eixoone-dev",
+    "staging": "eixoone-staging",
+    "prod": "eixoone-prod"
   }
 }

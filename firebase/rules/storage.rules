@@ -6,22 +6,31 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function sameOrg(orgId) {
-      return signedIn() && request.auth.token.organizationId == orgId;
+    function sameTenant(tenantId) {
+      return signedIn() && request.auth.token.tenantId == tenantId;
     }
 
-    function isValidSize() {
-      return request.resource.size < 10 * 1024 * 1024;
+    function validSize() {
+      return request.resource.size < 15 * 1024 * 1024;
     }
 
-    function isAllowedType() {
+    function allowedContentType() {
       return request.resource.contentType.matches('image/.*') ||
-        request.resource.contentType.matches('application/pdf');
+        request.resource.contentType.matches('application/pdf') ||
+        request.resource.contentType.matches('text/csv');
     }
 
-    match /organizations/{orgId}/{allPaths=**} {
-      allow read: if sameOrg(orgId);
-      allow write: if sameOrg(orgId) && isValidSize() && isAllowedType();
+    function validMetadata(tenantId) {
+      return request.resource.metadata.tenantId == tenantId &&
+        request.resource.metadata.uploadedBy == request.auth.uid;
+    }
+
+    match /organizations/{tenantId}/{allPaths=**} {
+      allow read: if sameTenant(tenantId);
+      allow write: if sameTenant(tenantId) &&
+        validSize() &&
+        allowedContentType() &&
+        validMetadata(tenantId);
     }
 
     match /{allPaths=**} {

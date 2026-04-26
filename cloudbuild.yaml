@@ -1,0 +1,110 @@
+steps:
+  - id: backend-install
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ ! -f backend/api_node/package.json ]; then
+          echo "backend/api_node/package.json not found. Skipping backend pipeline."
+          exit 0
+        fi
+
+        cd backend/api_node
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+
+  - id: backend-lint
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ ! -f backend/api_node/package.json ]; then
+          echo "Backend package missing. Skipping lint."
+          exit 0
+        fi
+
+        cd backend/api_node
+        if npm run | grep -q " lint"; then
+          npm run lint
+        else
+          echo "lint script not found. Skipping."
+        fi
+
+  - id: backend-typecheck
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ ! -f backend/api_node/package.json ]; then
+          echo "Backend package missing. Skipping typecheck."
+          exit 0
+        fi
+
+        cd backend/api_node
+        if npm run | grep -q " typecheck"; then
+          npm run typecheck
+        else
+          echo "typecheck script not found. Skipping."
+        fi
+
+  - id: backend-test
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ ! -f backend/api_node/package.json ]; then
+          echo "Backend package missing. Skipping tests."
+          exit 0
+        fi
+
+        cd backend/api_node
+        if npm run | grep -q " test"; then
+          npm test
+        else
+          echo "test script not found. Skipping."
+        fi
+
+  - id: backend-build
+    name: node:22
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ ! -f backend/api_node/package.json ]; then
+          echo "Backend package missing. Skipping build."
+          exit 0
+        fi
+
+        cd backend/api_node
+        if npm run | grep -q " build"; then
+          npm run build
+        else
+          echo "build script not found. Skipping."
+        fi
+
+  - id: deploy-guard
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        if [ "${_DEPLOY}" != "true" ]; then
+          echo "Deploy skipped by default."
+          exit 0
+        fi
+
+        echo "Deploy requested, but this pipeline keeps deploy manual by design."
+        echo "Use the guarded PowerShell commands documented in docs/deploy/cloud-build.md."
+
+substitutions:
+  _DEPLOY: "false"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

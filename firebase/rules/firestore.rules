@@ -6,36 +6,55 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function hasOrg(orgId) {
-      return signedIn() && request.auth.token.organizationId == orgId;
+    function tokenTenantId() {
+      return request.auth.token.tenantId;
     }
 
-    function isSelf(uid) {
+    function sameTenant(tenantId) {
+      return signedIn() && tokenTenantId() == tenantId;
+    }
+
+    function sameTenantResource() {
+      return signedIn() && resource.data.tenantId == tokenTenantId();
+    }
+
+    function ownUser(uid) {
       return signedIn() && request.auth.uid == uid;
     }
 
-    function isAdmin() {
+    function isPlatformAdmin() {
       return signedIn() && (
         request.auth.token.isAdmin == true ||
-        request.auth.token.role == 'admin'
+        request.auth.token.role == 'admin' ||
+        request.auth.token.role == 'platform_admin' ||
+        (
+          request.auth.token.roleKeys is list &&
+          request.auth.token.roleKeys.hasAny(['platform_admin'])
+        )
       );
     }
 
-    match /organizations/{orgId} {
-      allow read: if hasOrg(orgId) || isAdmin();
+    function hasPermission(permissionKey) {
+      return isPlatformAdmin() ||
+        (
+          request.auth.token.permissionKeys is list &&
+          request.auth.token.permissionKeys.hasAny([permissionKey])
+        );
+    }
+
+    match /organizations/{tenantId} {
+      allow read: if sameTenant(tenantId) || isPlatformAdmin();
       allow write: if false;
     }
 
     match /users/{uid} {
-      allow read: if isSelf(uid) || isAdmin();
-      allow create: if isAdmin();
-      allow update: if isSelf(uid) || isAdmin();
-      allow delete: if false;
+      allow read: if ownUser(uid) || (sameTenantResource() && hasPermission('users.read'));
+      allow create, update, delete: if false;
     }
 
     match /roles/{roleId} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
+      allow read: if sameTenantResource() && hasPermission('roles.read');
+      allow write: if false;
     }
 
     match /permissions/{permissionId} {
@@ -49,29 +68,39 @@ service cloud.firestore {
     }
 
     match /audit_logs/{logId} {
-      allow read: if isAdmin();
+      allow read: if sameTenantResource() && hasPermission('audit.read');
       allow write: if false;
     }
 
     match /settings/{settingId} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
+      allow read: if sameTenantResource() && hasPermission('settings.read');
+      allow write: if false;
     }
 
     match /notifications/{notificationId} {
-      allow read, update: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if false;
-      allow delete: if false;
+      allow read: if sameTenantResource() && resource.data.userId == request.auth.uid;
+      allow update: if sameTenantResource() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'readAt',
+          'status',
+          'updatedAt'
+        ]);
+      allow create, delete: if false;
     }
 
     match /files/{fileId} {
-      allow read: if signedIn() && resource.data.organizationId == request.auth.token.organizationId;
+      allow read: if sameTenantResource() && hasPermission('files.read');
       allow write: if false;
     }
 
     match /integrations/{integrationId} {
-      allow read: if isAdmin();
+      allow read: if sameTenantResource() && hasPermission('integrations.read');
       allow write: if false;
+    }
+
+    match /idempotency_records/{recordId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

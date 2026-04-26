@@ -2,9 +2,9 @@
 
 Gestao conectada. Decisoes claras.
 
-Base inicial de arquitetura para um monorepo Flutter + Firebase + Node.js/TypeScript, com foco em mobile-first, modularidade, seguranca e evolucao por dominios de negocio.
+Base evolutiva para um monorepo `Flutter + Firebase + Node.js/TypeScript`, com foco em modularidade por dominio, seguranca, auditoria, operacao multi-tenant e qualidade verificavel.
 
-## Estrutura alvo
+## Estrutura do monorepo
 
 ```text
 /eixoone
@@ -17,54 +17,197 @@ Base inicial de arquitetura para um monorepo Flutter + Firebase + Node.js/TypeSc
     /rules
   /docs
     /architecture
+    /operations
     /setup
     /ux-ui
   /packages
     /shared_contracts
+  /scripts
 ```
 
-## O que ja foi preparado
+## O que esta implementado
 
-- Arquitetura inicial e diretrizes de decisao em `docs/architecture/eixoone-foundation.md`
-- Setup local, comandos, teste e deploy em `docs/setup/local-setup.md`
-- Base de design system e exemplos Flutter em `docs/ux-ui/design-system.md`
-- Configuracoes iniciais do Firebase em `firebase.json`, `firebase/rules/firestore.rules`, `firebase/rules/storage.rules`
-- Exemplos de ambiente em `.firebaserc.example` e `.env.example`
+- `packages/shared_contracts` com contratos versionados `v1`, schemas Zod, envelopes de API, codigos de erro e metadados padronizados.
+- `backend/api_node` com Fastify, middlewares de autenticacao/autorizacao, correlacao, logs JSON, health/readiness, idempotencia, maquina de estados, auditoria e testes.
+- `apps/mobile_flutter` com design system Material 3, sessao local, formularios validados, retry, feedback inline, camada de repositorios/servicos, `firebase_options.dart` gerado e testes de widget.
+- Regras Firebase para Firestore/Storage, indices iniciais, validacao estatica e separacao de ambientes.
+- Base Google Cloud/Firebase de `dev` provisionada com `eixoone-dev`, billing ativo, Firestore Native, bucket padrao de Storage, service accounts, secrets populados para backend, Artifact Registry e Cloud Run.
+- Workflow de CI em `.github/workflows/ci.yml`.
 
-## Ferramentas verificadas neste ambiente
+## Prerequisitos
 
-Em `2026-04-25`, este ambiente local respondeu com:
+- `Node.js 22.14.0` recomendado via `.nvmrc`
+- `npm 11`
+- `Flutter 3.38.7`
+- `Firebase CLI 15+`
+- `JDK 11+` para emuladores Firebase
 
-- Flutter `3.38.7`
-- Dart `3.10.7`
-- Node.js `24.11.1`
-- npm `11.6.2`
-- Firebase CLI `15.9.0`
+Observacao: o ambiente atual estava em `Node 24.11.1`. O monorepo continua validando, mas o runtime-alvo permanece `Node 22 LTS` para manter paridade com Cloud Run/Functions.
 
-Observacao: para `Cloud Functions`, a documentacao oficial atual suporta `Node.js 20` e `22`. Para manter paridade de runtime, vale fixar o projeto em `Node 22 LTS` via `nvm`, `fnm` ou `Volta`.
+## Comandos principais
 
-## Leitura recomendada
+### Node e Firebase
 
-1. `docs/architecture/eixoone-foundation.md`
-2. `docs/ux-ui/design-system.md`
-3. `docs/setup/local-setup.md`
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm run test
+npm run validate
+```
 
-## Primeiro passo pratico
+### Flutter
 
-1. Criar o app Flutter dentro de `apps/mobile_flutter`
-2. Criar a API Node.js dentro de `backend/api_node`
-3. Executar `flutterfire configure`
-4. Ajustar `.firebaserc` a partir de `.firebaserc.example`
-5. Subir os emuladores Firebase
-6. Validar login, `/health` e regras basicas
+```bash
+cd apps/mobile_flutter
+flutter pub get
+flutter analyze
+flutter test
+flutter build web
+```
 
-## Referencias oficiais usadas
+## Como executar localmente
 
-- Firebase + Flutter setup: https://firebase.google.com/docs/flutter/setup
-- Firebase CLI: https://firebase.google.com/docs/cli
-- Firebase Emulator Suite: https://firebase.google.com/docs/emulator-suite/install_and_configure
-- Firebase App Check para Flutter: https://firebase.google.com/docs/app-check/flutter/default-providers
-- Firebase Admin SDK: https://firebase.google.com/docs/admin/setup
-- Verificacao de ID Token: https://firebase.google.com/docs/auth/admin/verify-id-tokens
-- Firestore Security Rules: https://firebase.google.com/docs/firestore/security/get-started
-- Cloud Functions for Firebase: https://firebase.google.com/docs/functions/get-started
+1. Copie `.env.example` para `.env`.
+2. Copie `.firebaserc.example` para `.firebaserc`.
+3. Para modo local sem Firebase real, mantenha `DATA_MODE=memory`.
+4. Para modo com emuladores, ajuste `DATA_MODE=firebase` e exporte:
+
+```bash
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8088
+STORAGE_EMULATOR_HOST=127.0.0.1:9199
+```
+
+5. Suba os emuladores:
+
+```bash
+firebase emulators:start
+```
+
+Opcao recomendada para o monorepo:
+
+```bash
+npm run emulators:start
+```
+
+6. Semeie Auth, Firestore e Storage locais:
+
+```bash
+npm run emulators:seed
+```
+
+7. Suba a API:
+
+```bash
+cd backend/api_node
+npm run dev
+```
+
+8. Suba o app Flutter:
+
+```bash
+cd apps/mobile_flutter
+flutter run -d chrome
+```
+
+Em `debug`, o app Flutter passa a apontar para os emuladores por padrao. Para dispositivo fisico, sobrescreva o host:
+
+```bash
+flutter run -d android --dart-define=FIREBASE_EMULATOR_HOST=192.168.0.10
+```
+
+## Como testar
+
+### Validacao completa do backend/contracts/Firebase
+
+```bash
+npm run validate
+```
+
+### Testes do Flutter
+
+```bash
+cd apps/mobile_flutter
+flutter analyze
+flutter test
+```
+
+### Smoke tests de emuladores
+
+Com os emuladores ativos:
+
+```bash
+npm run emulators:seed
+npm run test:emulators
+```
+
+### Validacao da fundacao GCloud/Firebase
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\06-validate-gcloud-foundation.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\10-validate-flutter-firebase.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\09-smoke-test-cloud-run-api.ps1
+```
+
+### Health checks
+
+```bash
+curl http://localhost:4000/health
+curl http://localhost:4000/ready
+```
+
+## Como fazer o primeiro deploy
+
+### Web Flutter
+
+```bash
+cd apps/mobile_flutter
+flutter build web --release
+cd ../..
+npm run deploy:web:staging
+```
+
+### Producao
+
+```bash
+ALLOW_PROD_DEPLOY=true npm run deploy:web:production
+```
+
+### API dev em Cloud Run
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\08-deploy-cloud-run-api.ps1 -Apply
+```
+
+### API
+
+- Recomendacao principal: `Cloud Run` para a API HTTP.
+- Opcao complementar: `Cloud Functions` para gatilhos pequenos e webhooks orientados a eventos.
+- Antes de deployar a API, troque `DATA_MODE=memory` por `DATA_MODE=firebase` e configure credenciais seguras no ambiente.
+
+## Riscos e decisoes pendentes
+
+- Configurar provedores de Authentication e App Check no console Firebase.
+- Decidir quando o dashboard Flutter deixa de usar repositorios em memoria e passa para Firestore/API por padrao.
+- Definir a malha oficial de `custom claims` por tenant, papel e modulo.
+- Conectar a gravacao de auditoria e idempotencia a colecoes reais no Firestore ou outro storage transacional.
+
+## Proximos passos
+
+1. Adicionar repositores reais do Flutter com Firebase Auth/Firestore/Storage.
+2. Criar primeiros dominios de negocio alem de `users`, como `crm` e `finance`.
+3. Implementar seeds para emuladores Firebase e smoke tests de rules.
+4. Fechar deploy automatizado da API em Cloud Run com ambientes `staging` e `production`.
+
+## Documentacao
+
+- [Arquitetura base](docs/architecture/eixoone-foundation.md)
+- [Template para novos dominios](docs/architecture/domain-module-template.md)
+- [Contratos compartilhados](docs/architecture/shared-contracts.md)
+- [Modelo de dados](docs/architecture/data-model.md)
+- [Seguranca e permissoes](docs/architecture/security-and-permissions.md)
+- [Setup local](docs/setup/local-setup.md)
+- [Observabilidade e troubleshooting](docs/operations/observability.md)
+- [Recuperabilidade e falhas](docs/operations/recoverability.md)
+- [Design system Flutter](docs/ux-ui/design-system.md)

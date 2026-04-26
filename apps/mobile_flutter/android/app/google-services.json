@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "62096819076",
+    "project_id": "eixoone-dev",
+    "storage_bucket": "eixoone-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:62096819076:android:f632f52f19a5a9ed1b93d1",
+        "android_client_info": {
+          "package_name": "com.eixoone.eixoone_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSWm4OmDI-AuPwWESodDWswXd9o-Z3Knw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
