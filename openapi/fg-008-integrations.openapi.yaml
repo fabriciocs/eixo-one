@@ -1,0 +1,359 @@
+openapi: 3.1.0
+info:
+  title: EixoOne FG-008 - Integrações, API e webhooks
+  version: 0.1.0
+  description: API de governança operacional para clientes de API, webhooks, exportação e histórico auditável.
+servers:
+  - url: https://api.eixoone.example.com
+security:
+  - firebaseBearer: []
+paths:
+  /v1/base-governance/integrations:
+    get:
+      operationId: listFg008Integrations
+      summary: Lista clientes de API e webhooks por contexto operacional
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/EmpresaId'
+        - $ref: '#/components/parameters/FilialId'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/IntegrationStatus'
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/base-governance/integrations/api-clients:
+    post:
+      operationId: createFg008ApiClient
+      summary: Cria cliente de API com credencial referenciada em cofre
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiClientRequest'
+      responses:
+        '200':
+          description: Cliente criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiClientEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/base-governance/integrations/webhooks:
+    post:
+      operationId: createFg008Webhook
+      summary: Cria assinatura de webhook
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+      responses:
+        '200':
+          description: Webhook criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /v1/base-governance/integrations/status:
+    patch:
+      operationId: changeFg008IntegrationStatus
+      summary: Suspende, reativa ou arquiva integração com auditoria
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegrationStatusRequest'
+      responses:
+        '200':
+          description: Status alterado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyIntegrationEnvelope'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/base-governance/integrations/export:
+    post:
+      operationId: exportFg008Integrations
+      summary: Exporta configurações permitidas mediante justificativa
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '200':
+          description: Exportação mascarada
+  /v1/base-governance/integrations/history:
+    get:
+      operationId: listFg008AuditHistory
+      summary: Lista auditoria das integrações
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: targetId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Histórico auditável
+components:
+  securitySchemes:
+    firebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID Token
+  parameters:
+    TenantId:
+      name: tenantId
+      in: query
+      required: false
+      schema:
+        type: string
+    EmpresaId:
+      name: empresaId
+      in: query
+      required: false
+      schema:
+        type: string
+    FilialId:
+      name: filialId
+      in: query
+      required: false
+      schema:
+        type: string
+    IdempotencyKey:
+      name: x-idempotency-key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  schemas:
+    IntegrationStatus:
+      type: string
+      enum: [active, suspended, archived, pending_review]
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details: {}
+    Meta:
+      type: object
+      required: [requestId]
+      properties:
+        requestId:
+          type: string
+        idempotencyKey:
+          type: string
+    CreateApiClientRequest:
+      type: object
+      required: [tenantId, code, name, direction, allowedScopes, allowedOrigins, credentialKind, credentialProviderKey, endpointVersion, reason]
+      properties:
+        tenantId:
+          type: string
+        empresaId:
+          type: string
+        filialId:
+          type: string
+        code:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{2,30}$'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 500
+        direction:
+          type: string
+          enum: [inbound, outbound, bidirectional]
+        allowedScopes:
+          type: array
+          items:
+            type: string
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+            format: uri
+        credentialKind:
+          type: string
+          enum: [oauth2, api_key, webhook_secret, oidc, saml]
+        credentialProviderKey:
+          type: string
+        endpointVersion:
+          type: object
+          required: [version, baseUrl]
+          properties:
+            version:
+              type: string
+            baseUrl:
+              type: string
+              format: uri
+            openApiPath:
+              type: string
+            status:
+              $ref: '#/components/schemas/IntegrationStatus'
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+    CreateWebhookRequest:
+      type: object
+      required: [tenantId, code, name, targetUrl, events, reason]
+      properties:
+        tenantId:
+          type: string
+        empresaId:
+          type: string
+        filialId:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        targetUrl:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        retryPolicy:
+          type: object
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+    UpdateIntegrationStatusRequest:
+      type: object
+      required: [tenantId, targetType, targetId, status, reason, confirmationText]
+      properties:
+        tenantId:
+          type: string
+        empresaId:
+          type: string
+        filialId:
+          type: string
+        targetType:
+          type: string
+          enum: [api_client, webhook_subscription]
+        targetId:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended, archived]
+        reason:
+          type: string
+        confirmationText:
+          type: string
+    ExportRequest:
+      type: object
+      required: [tenantId, reason]
+      properties:
+        tenantId:
+          type: string
+        empresaId:
+          type: string
+        filialId:
+          type: string
+        status:
+          $ref: '#/components/schemas/IntegrationStatus'
+        includeArchived:
+          type: boolean
+        reason:
+          type: string
+    IntegrationListEnvelope:
+      type: object
+      required: [ok, data, meta]
+      properties:
+        ok:
+          type: boolean
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+    ApiClientEnvelope:
+      type: object
+      required: [ok, data, meta]
+      properties:
+        ok:
+          type: boolean
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+    WebhookEnvelope:
+      type: object
+      required: [ok, data, meta]
+      properties:
+        ok:
+          type: boolean
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+    AnyIntegrationEnvelope:
+      type: object
+      required: [ok, data, meta]
+      properties:
+        ok:
+          type: boolean
+        data:
+          type: object
+        meta:
+          $ref: '#/components/schemas/Meta'
+  responses:
+    Unauthorized:
+      description: Autenticação ausente ou inválida
+    Forbidden:
+      description: Permissão insuficiente ou escopo negado
+    ValidationError:
+      description: Payload inválido
+    Conflict:
+      description: Conflito, incluindo replay de idempotência incompatível

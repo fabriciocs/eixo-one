@@ -1,33 +1,15 @@
 {
-  "name": "eixoone",
+  "name": "@eixoone/fg-008-integracoes-api-webhooks",
+  "version": "0.1.0",
   "private": true,
-  "version": "1.0.0",
-  "workspaces": [
-    "backend/api_node",
-    "packages/shared_contracts"
-  ],
-  "engines": {
-    "node": ">=22 <23",
-    "npm": ">=11 <12"
-  },
+  "type": "commonjs",
+  "description": "Entrega exemplar da FG-008 — Integrações, API e webhooks para EixoOne.",
   "scripts": {
-    "build": "npm run build -w @eixoone/shared-contracts && npm run build -w @eixoone/api-node",
-    "deploy:check": "node scripts/assert-safe-deploy.mjs",
-    "deploy:web:staging": "node scripts/assert-safe-deploy.mjs staging && firebase deploy --project eixoone-staging --only hosting",
-    "deploy:web:production": "node scripts/assert-safe-deploy.mjs production && firebase deploy --project eixoone-prod --only hosting",
-    "emulators:start": "firebase emulators:start --only auth,firestore,storage,hosting",
-    "emulators:seed": "node scripts/firebase/seed-emulators.mjs",
-    "lint": "npm run lint -w @eixoone/shared-contracts && npm run lint -w @eixoone/api-node",
-    "test:emulators:rules": "node scripts/firebase/test-emulator-rules.mjs",
-    "test:emulators:flow": "npm run build -w @eixoone/api-node && node scripts/firebase/test-local-flow.mjs",
-    "test:emulators": "npm run test:emulators:rules && npm run test:emulators:flow",
-    "typecheck": "npm run typecheck -w @eixoone/shared-contracts && npm run typecheck -w @eixoone/api-node",
-    "test": "npm run test -w @eixoone/shared-contracts && npm run test -w @eixoone/api-node",
-    "validate": "npm run lint && npm run typecheck && npm run test && node scripts/validate-firebase-config.mjs",
-    "validate:firebase": "node scripts/validate-firebase-config.mjs"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "node tests/fg008.validation.test.cjs",
+    "validate:manifest": "node scripts/validate_manifest.mjs"
   },
-  "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.0",
-    "firebase": "^12.4.0"
-  }
+  "devDependencies": {}
 }
+

@@ -6,124 +6,50 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function tokenTenantId() {
-      return request.auth.token.tenantId;
+    function hasTenant(tenantId) {
+      return signedIn() && request.auth.token.tenantId == tenantId;
     }
 
-    function sameTenant(tenantId) {
-      return signedIn() && tokenTenantId() == tenantId;
-    }
-
-    function sameTenantResource() {
-      return signedIn() && resource.data.tenantId == tokenTenantId();
-    }
-
-    function ownUser(uid) {
-      return signedIn() && request.auth.uid == uid;
+    function hasPermission(permission) {
+      return signedIn()
+        && request.auth.token.permissionKeys is list
+        && request.auth.token.permissionKeys.hasAny([permission]);
     }
 
     function isPlatformAdmin() {
-      return signedIn() && (
-        request.auth.token.isAdmin == true ||
-        request.auth.token.role == 'admin' ||
-        request.auth.token.role == 'platform_admin' ||
-        (
-          request.auth.token.roleKeys is list &&
-          request.auth.token.roleKeys.hasAny(['platform_admin'])
-        )
-      );
+      return signedIn()
+        && request.auth.token.roleKeys is list
+        && request.auth.token.roleKeys.hasAny(['platform_admin']);
     }
 
-    function hasPermission(permissionKey) {
-      return isPlatformAdmin() ||
-        (
-          request.auth.token.permissionKeys is list &&
-          request.auth.token.permissionKeys.hasAny([permissionKey])
-        );
+    function canReadFg008(tenantId) {
+      return (isPlatformAdmin() || hasTenant(tenantId))
+        && hasPermission('base_governance.integrations_api_webhooks.read');
     }
 
-    match /organizations/{tenantId} {
-      allow read: if sameTenant(tenantId) || isPlatformAdmin();
-      allow write: if false;
-    }
-
-    match /users/{uid} {
-      allow read: if ownUser(uid) || (sameTenantResource() && hasPermission('users.read'));
+    // FG-008: leitura direta limitada; mutações sensíveis somente pela API Fastify/Admin SDK.
+    match /tenants/{tenantId}/integrationApiClients/{clientId} {
+      allow read: if canReadFg008(tenantId);
       allow create, update, delete: if false;
     }
 
-    match /roles/{roleId} {
-      allow read: if sameTenantResource() && hasPermission('roles.read');
-      allow write: if false;
+    match /tenants/{tenantId}/webhookSubscriptions/{webhookId} {
+      allow read: if canReadFg008(tenantId);
+      allow create, update, delete: if false;
     }
 
-    match /permissions/{permissionId} {
-      allow read: if signedIn();
-      allow write: if false;
+    match /tenants/{tenantId}/integrationEventLogs/{eventId} {
+      allow read: if canReadFg008(tenantId);
+      allow create, update, delete: if false;
     }
 
-    match /modules/{moduleId} {
-      allow read: if signedIn();
-      allow write: if false;
+    match /tenants/{tenantId}/auditLogs/{auditId} {
+      allow read: if canReadFg008(tenantId)
+        && hasPermission('base_governance.integrations_api_webhooks.history');
+      allow create, update, delete: if false;
     }
 
-    match /audit_logs/{logId} {
-      allow read: if sameTenantResource() && hasPermission('audit.read');
-      allow write: if false;
-    }
-
-    match /settings/{settingId} {
-      allow read: if sameTenantResource() && hasPermission('settings.read');
-      allow write: if false;
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if sameTenantResource() && resource.data.userId == request.auth.uid;
-      allow update: if sameTenantResource() &&
-        resource.data.userId == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'readAt',
-          'status',
-          'updatedAt'
-        ]);
-      allow create, delete: if false;
-    }
-
-    match /files/{fileId} {
-      allow read: if sameTenantResource() && hasPermission('files.read');
-      allow write: if false;
-    }
-
-    match /integrations/{integrationId} {
-      allow read: if sameTenantResource() && hasPermission('integrations.read');
-      allow write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/companies/{companyId} {
-      allow read, write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/establishments/{establishmentId} {
-      allow read, write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/user_scope_grants/{userId} {
-      allow read, write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/user_contexts/{userId} {
-      allow read, write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/sharing_policies/{policyId} {
-      allow read, write: if false;
-    }
-
-    match /tenants/{tenantId}/domains/governance/consolidation_runs/{runId} {
-      allow read, write: if false;
-    }
-
-    match /idempotency_records/{recordId} {
+    match /tenants/{tenantId}/idempotencyKeys/{keyId} {
       allow read, write: if false;
     }
 

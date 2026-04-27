@@ -2,38 +2,8 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function sameTenant(tenantId) {
-      return signedIn() && request.auth.token.tenantId == tenantId;
-    }
-
-    function validSize() {
-      return request.resource.size < 15 * 1024 * 1024;
-    }
-
-    function allowedContentType() {
-      return request.resource.contentType.matches('image/.*') ||
-        request.resource.contentType.matches('application/pdf') ||
-        request.resource.contentType.matches('text/csv');
-    }
-
-    function validMetadata(tenantId) {
-      return request.resource.metadata.tenantId == tenantId &&
-        request.resource.metadata.uploadedBy == request.auth.uid;
-    }
-
-    match /organizations/{tenantId}/{allPaths=**} {
-      allow read: if sameTenant(tenantId);
-      allow write: if sameTenant(tenantId) &&
-        validSize() &&
-        allowedContentType() &&
-        validMetadata(tenantId);
-    }
-
-    match /tenants/{tenantId}/governance/{allPaths=**} {
+    // FG-008: payloads/exportações de integração são sensíveis e devem ser acessados por URLs assinadas geradas no backend.
+    match /tenants/{tenantId}/integrations/{allPaths=**} {
       allow read, write: if false;
     }
 
