@@ -1,0 +1,38 @@
+{
+  "name": "analista-executor-completo",
+  "version": "0.1.0",
+  "description": "Executa analise, pesquisa, especificacao, implementacao, QA, documentacao e entrega completa de funcionalidades de software.",
+  "author": {
+    "name": "Equipe de Produto e Engenharia",
+    "email": "dev@example.com",
+    "url": "https://example.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "skill",
+    "qa",
+    "product",
+    "architecture",
+    "software-delivery"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Analista Executor Completo",
+    "shortDescription": "Transforma solicitacoes em documentacao, codigo, testes e entrega rastreavel.",
+    "longDescription": "Plugin para Codex que padroniza a execucao ponta a ponta de funcionalidades: entendimento, pesquisa, definicao funcional, UX/UI, arquitetura, backend, frontend, QA, testes, evidencias, Git e relatorio final.",
+    "developerName": "Equipe de Produto e Engenharia",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Code",
+      "Test"
+    ],
+    "defaultPrompt": [
+      "Use o Analista Executor Completo para transformar esta funcionalidade em documentos, implementacao, testes e relatorio final.",
+      "Use o Analista Executor Completo para ler a solicitacao, pesquisar referencias, especificar, implementar, testar e preparar commit/push quando possivel."
+    ],
+    "brandColor": "#10A37F"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "plugins-locais",
+  "interface": {
+    "displayName": "Plugins Locais"
+  },
+  "plugins": [
+    {
+      "name": "analista-executor-completo",
+      "source": {
+        "source": "local",
+        "path": "./plugins/analista-executor-completo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
