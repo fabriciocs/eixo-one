@@ -7,6 +7,8 @@ Este arquivo acompanha o workflow `extract-source-zip-and-optional-bash-from-las
 O workflow lê a mensagem do último commit e identifica:
 
 
+
+
 1. O primeiro arquivo ou caminho terminado em `.zip`, obrigatório.
 2. O primeiro arquivo ou caminho terminado em `.md`, opcional.
 
