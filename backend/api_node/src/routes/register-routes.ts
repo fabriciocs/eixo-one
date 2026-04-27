@@ -1,4 +1,6 @@
 import {
+  createExportJobRequestSchema,
+  createImportJobRequestSchema,
   createRoleRequestSchema,
   changeUserStatusBodySchema,
   companyIdSchema,
@@ -7,9 +9,11 @@ import {
   createConsolidationRunRequestSchema,
   createEstablishmentRequestSchema,
   createSharingPolicyRequestSchema,
+  dataJobIdSchema,
   establishmentIdSchema,
   establishmentStatusTransitionBodySchema,
   listAuditEventsQuerySchema,
+  listDataJobsQuerySchema,
   listCompaniesQuerySchema,
   listConsolidationRunsQuerySchema,
   listEstablishmentsQuerySchema,
@@ -28,6 +32,7 @@ import {
   updateSharingPolicyRequestSchema,
   upsertUserScopeGrantRequestSchema,
   settingKeySchema,
+  runImportJobRequestSchema,
 } from '@eixoone/shared-contracts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -66,6 +71,10 @@ const roleIdParamsSchema = z.object({
 
 const settingKeyParamsSchema = z.object({
   settingKey: settingKeySchema,
+});
+
+const dataJobIdParamsSchema = z.object({
+  jobId: dataJobIdSchema,
 });
 
 export async function registerRoutes(
@@ -656,5 +665,62 @@ export async function registerRoutes(
       ],
     },
     baseGovernanceController.listAuditEvents,
+  );
+
+  app.get(
+    '/v1/governance/data-jobs',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'data_jobs.read'),
+        validateRequest({
+          querystring: listDataJobsQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listDataJobs,
+  );
+
+  app.post(
+    '/v1/governance/imports',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'data_jobs.manage'),
+        validateRequest({
+          body: createImportJobRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.createImportJob,
+  );
+
+  app.post(
+    '/v1/governance/imports/:jobId/run',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'data_jobs.manage'),
+        validateRequest({
+          params: dataJobIdParamsSchema,
+          body: runImportJobRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.runImportJob,
+  );
+
+  app.post(
+    '/v1/governance/exports',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'data_jobs.manage'),
+        validateRequest({
+          body: createExportJobRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.createExportJob,
   );
 }

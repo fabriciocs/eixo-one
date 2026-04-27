@@ -22,6 +22,8 @@ describe('Base Governance API', () => {
         'settings.read',
         'settings.manage',
         'audit.read',
+        'data_jobs.read',
+        'data_jobs.manage',
         'governance.company.read',
         'governance.company.create',
         'governance.company.update',
@@ -272,5 +274,82 @@ describe('Base Governance API', () => {
         .json()
         .data.items.some((item: { key: string }) => item.key === 'catalog.reader'),
     ).toBe(true);
+  });
+
+  it('creates, validates, runs and lists FG-006 import jobs', async () => {
+    const server = await createApp();
+
+    const createResponse = await server.inject({
+      method: 'POST',
+      url: '/v1/governance/imports',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        entity: 'roles',
+        format: 'csv',
+        fileName: 'roles.csv',
+        mode: 'upsert',
+        content: [
+          'key,name,permissionKeys,status',
+          'finance.viewer,Financeiro leitura,roles.read|reporting.consolidated.read,active',
+        ].join('\n'),
+      },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.json().data.status).toBe('validated');
+
+    const jobId = createResponse.json().data.id as string;
+    const runResponse = await server.inject({
+      method: 'POST',
+      url: `/v1/governance/imports/${jobId}/run`,
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {},
+    });
+
+    expect(runResponse.statusCode).toBe(200);
+    expect(runResponse.json().data.status).toBe('completed');
+
+    const jobsResponse = await server.inject({
+      method: 'GET',
+      url: '/v1/governance/data-jobs?page=1&pageSize=20&type=import',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+    });
+
+    expect(jobsResponse.statusCode).toBe(200);
+    expect(
+      jobsResponse
+        .json()
+        .data.items.some((item: { id: string }) => item.id === jobId),
+    ).toBe(true);
+  });
+
+  it('creates export jobs with sanitized output preview', async () => {
+    const server = await createApp();
+
+    const exportResponse = await server.inject({
+      method: 'POST',
+      url: '/v1/governance/exports',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        entity: 'settings',
+        format: 'csv',
+        fileName: 'settings.csv',
+        filters: {
+          moduleKey: 'governance',
+        },
+      },
+    });
+
+    expect(exportResponse.statusCode).toBe(201);
+    expect(exportResponse.json().data.status).toBe('completed');
+    expect(exportResponse.json().data.outputPreview).toContain('settingKey');
   });
 });

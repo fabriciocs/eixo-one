@@ -3,6 +3,10 @@ import type {
   BaseGovernanceRole,
   BaseGovernanceRoleStatus,
   BaseGovernanceSetting,
+  DataJob,
+  DataJobEntity,
+  DataJobStatus,
+  DataJobType,
   ListSettingsQuery,
   ResetSettingRequest,
   SettingScopeType,
@@ -37,6 +41,15 @@ export type ListSettingsFilters = {
   scopeType?: SettingScopeType;
   sensitive?: boolean;
   status?: ListSettingsQuery['status'];
+  page: number;
+  pageSize: number;
+};
+
+export type ListDataJobsFilters = {
+  search?: string;
+  entity?: DataJobEntity;
+  type?: DataJobType;
+  status?: DataJobStatus;
   page: number;
   pageSize: number;
 };
@@ -89,5 +102,12 @@ export interface BaseGovernanceRepository {
     tenantId: string,
     filters: ListAuditFilters,
   ): Promise<BaseGovernanceListResult<AuditEvent>>;
+  listDataJobs(
+    tenantId: string,
+    filters: ListDataJobsFilters,
+  ): Promise<BaseGovernanceListResult<DataJob>>;
+  findDataJobById(tenantId: string, jobId: string): Promise<DataJob | null>;
+  createDataJob(job: DataJob): Promise<DataJob>;
+  saveDataJob(job: DataJob): Promise<DataJob>;
   isReady(): Promise<boolean>;
 }

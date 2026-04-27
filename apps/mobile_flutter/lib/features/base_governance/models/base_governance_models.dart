@@ -465,3 +465,313 @@ List<BaseGovernanceAuditEvent> readAuditEventList(Object? rawValue) {
 List<BaseGovernanceSetting> readSettingsList(Object? rawValue) {
   return _readList(rawValue, BaseGovernanceSetting.fromJson);
 }
+
+enum DataJobType {
+  import('import', 'Importacao'),
+  export('export', 'Exportacao');
+
+  const DataJobType(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static DataJobType fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => DataJobType.import,
+    );
+  }
+}
+
+enum DataJobEntity {
+  roles('roles', 'Perfis'),
+  settings('settings', 'Configuracoes'),
+  customers('customers', 'Clientes'),
+  audit('audit', 'Auditoria'),
+  privacyRequests('privacy_requests', 'Privacidade');
+
+  const DataJobEntity(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static DataJobEntity fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => DataJobEntity.roles,
+    );
+  }
+}
+
+enum DataJobFormat {
+  csv('csv'),
+  xlsx('xlsx'),
+  pdf('pdf');
+
+  const DataJobFormat(this.wireName);
+
+  final String wireName;
+
+  static DataJobFormat fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => DataJobFormat.csv,
+    );
+  }
+}
+
+enum DataJobStatus {
+  draft('draft', 'Rascunho'),
+  validated('validated', 'Validado'),
+  queued('queued', 'Na fila'),
+  processing('processing', 'Processando'),
+  completed('completed', 'Concluido'),
+  completedWithErrors('completed_with_errors', 'Concluido com erros'),
+  failed('failed', 'Falhou'),
+  cancelled('cancelled', 'Cancelado');
+
+  const DataJobStatus(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static DataJobStatus fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => DataJobStatus.draft,
+    );
+  }
+}
+
+enum DataJobMode {
+  create('create'),
+  update('update'),
+  upsert('upsert'),
+  simulation('simulation');
+
+  const DataJobMode(this.wireName);
+
+  final String wireName;
+
+  static DataJobMode fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => DataJobMode.simulation,
+    );
+  }
+}
+
+class DataJobMappingEntry {
+  const DataJobMappingEntry({
+    required this.sourceColumn,
+    required this.targetField,
+    required this.required,
+  });
+
+  final String sourceColumn;
+  final String targetField;
+  final bool required;
+
+  factory DataJobMappingEntry.fromJson(JsonMap json) {
+    return DataJobMappingEntry(
+      sourceColumn: _readString(json['sourceColumn']),
+      targetField: _readString(json['targetField']),
+      required: json['required'] as bool? ?? false,
+    );
+  }
+
+  JsonMap toJson() => {
+    'sourceColumn': sourceColumn,
+    'targetField': targetField,
+    'required': required,
+  };
+}
+
+class DataJobError {
+  const DataJobError({
+    required this.row,
+    required this.field,
+    required this.message,
+  });
+
+  final int row;
+  final String field;
+  final String message;
+
+  factory DataJobError.fromJson(JsonMap json) {
+    return DataJobError(
+      row: json['row'] as int? ?? 0,
+      field: _readString(json['field']),
+      message: _readString(json['message']),
+    );
+  }
+}
+
+class DataJobPreviewRow {
+  const DataJobPreviewRow({
+    required this.rowNumber,
+    required this.values,
+    required this.valid,
+  });
+
+  final int rowNumber;
+  final JsonMap values;
+  final bool valid;
+
+  factory DataJobPreviewRow.fromJson(JsonMap json) {
+    return DataJobPreviewRow(
+      rowNumber: json['rowNumber'] as int? ?? 0,
+      values: _readJsonMap(json['values']),
+      valid: json['valid'] as bool? ?? false,
+    );
+  }
+}
+
+class DataJob {
+  const DataJob({
+    required this.id,
+    required this.tenantId,
+    required this.type,
+    required this.entity,
+    required this.format,
+    required this.status,
+    required this.fileName,
+    required this.mapping,
+    required this.filters,
+    required this.totalRows,
+    required this.validRows,
+    required this.invalidRows,
+    required this.errors,
+    required this.previewRows,
+    required this.createdBy,
+    required this.createdAt,
+    this.companyId,
+    this.establishmentId,
+    this.mode,
+    this.outputPreview,
+    this.updatedAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String tenantId;
+  final DataJobType type;
+  final DataJobEntity entity;
+  final DataJobFormat format;
+  final DataJobStatus status;
+  final String fileName;
+  final String? companyId;
+  final String? establishmentId;
+  final DataJobMode? mode;
+  final List<DataJobMappingEntry> mapping;
+  final JsonMap filters;
+  final int totalRows;
+  final int validRows;
+  final int invalidRows;
+  final List<DataJobError> errors;
+  final List<DataJobPreviewRow> previewRows;
+  final String? outputPreview;
+  final String createdBy;
+  final String createdAt;
+  final String? updatedAt;
+  final String? completedAt;
+
+  factory DataJob.fromJson(JsonMap json) {
+    return DataJob(
+      id: _readString(json['id']),
+      tenantId: _readString(json['tenantId']),
+      type: DataJobType.fromWire(_readString(json['type'])),
+      entity: DataJobEntity.fromWire(_readString(json['entity'])),
+      format: DataJobFormat.fromWire(_readString(json['format'])),
+      status: DataJobStatus.fromWire(_readString(json['status'])),
+      fileName: _readString(json['fileName']),
+      companyId: (_readString(json['companyId'])).isEmpty
+          ? null
+          : _readString(json['companyId']),
+      establishmentId: (_readString(json['establishmentId'])).isEmpty
+          ? null
+          : _readString(json['establishmentId']),
+      mode: (_readString(json['mode'])).isEmpty
+          ? null
+          : DataJobMode.fromWire(_readString(json['mode'])),
+      mapping: _readList(json['mapping'], DataJobMappingEntry.fromJson),
+      filters: _readJsonMap(json['filters']),
+      totalRows: json['totalRows'] as int? ?? 0,
+      validRows: json['validRows'] as int? ?? 0,
+      invalidRows: json['invalidRows'] as int? ?? 0,
+      errors: _readList(json['errors'], DataJobError.fromJson),
+      previewRows: _readList(json['previewRows'], DataJobPreviewRow.fromJson),
+      outputPreview: (_readString(json['outputPreview'])).isEmpty
+          ? null
+          : _readString(json['outputPreview']),
+      createdBy: _readString(json['createdBy']),
+      createdAt: _readString(json['createdAt']),
+      updatedAt: (_readString(json['updatedAt'])).isEmpty
+          ? null
+          : _readString(json['updatedAt']),
+      completedAt: (_readString(json['completedAt'])).isEmpty
+          ? null
+          : _readString(json['completedAt']),
+    );
+  }
+}
+
+class CreateImportJobInput {
+  const CreateImportJobInput({
+    required this.entity,
+    required this.format,
+    required this.fileName,
+    required this.mode,
+    required this.mapping,
+    required this.content,
+    this.companyId,
+    this.establishmentId,
+  });
+
+  final DataJobEntity entity;
+  final DataJobFormat format;
+  final String fileName;
+  final DataJobMode mode;
+  final List<DataJobMappingEntry> mapping;
+  final String content;
+  final String? companyId;
+  final String? establishmentId;
+
+  JsonMap toJson() => {
+    'entity': entity.wireName,
+    'format': format.wireName,
+    'fileName': fileName,
+    'mode': mode.wireName,
+    'mapping': mapping.map((entry) => entry.toJson()).toList(growable: false),
+    'content': content,
+    if (companyId != null) 'companyId': companyId,
+    if (establishmentId != null) 'establishmentId': establishmentId,
+  };
+}
+
+class CreateExportJobInput {
+  const CreateExportJobInput({
+    required this.entity,
+    required this.format,
+    required this.fileName,
+    required this.filters,
+    this.companyId,
+    this.establishmentId,
+  });
+
+  final DataJobEntity entity;
+  final DataJobFormat format;
+  final String fileName;
+  final JsonMap filters;
+  final String? companyId;
+  final String? establishmentId;
+
+  JsonMap toJson() => {
+    'entity': entity.wireName,
+    'format': format.wireName,
+    'fileName': fileName,
+    'filters': filters,
+    if (companyId != null) 'companyId': companyId,
+    if (establishmentId != null) 'establishmentId': establishmentId,
+  };
+}

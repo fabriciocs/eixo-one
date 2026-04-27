@@ -69,6 +69,31 @@ abstract class BaseGovernanceRepository {
     int page = 1,
     int pageSize = 50,
   });
+
+  Future<BaseGovernanceListResult<DataJob>> listDataJobs(
+    AuthSession session, {
+    String? search,
+    DataJobEntity? entity,
+    DataJobType? type,
+    DataJobStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  });
+
+  Future<DataJob> createImportJob(
+    AuthSession session,
+    CreateImportJobInput input,
+  );
+
+  Future<DataJob> runImportJob(
+    AuthSession session,
+    String jobId,
+  );
+
+  Future<DataJob> createExportJob(
+    AuthSession session,
+    CreateExportJobInput input,
+  );
 }
 
 final baseGovernanceRepositoryProvider = Provider<BaseGovernanceRepository>((
@@ -413,17 +438,89 @@ class ApiBaseGovernanceRepository implements BaseGovernanceRepository {
     );
     return _parseListResult(envelope, BaseGovernanceAuditEvent.fromJson);
   }
+
+  @override
+  Future<BaseGovernanceListResult<DataJob>> listDataJobs(
+    AuthSession session, {
+    String? search,
+    DataJobEntity? entity,
+    DataJobType? type,
+    DataJobStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final envelope = await _send(
+      method: 'GET',
+      path: '/v1/governance/data-jobs',
+      queryParameters: <String, String>{
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (entity != null) 'entity': entity.wireName,
+        if (type != null) 'type': type.wireName,
+        if (status != null) 'status': status.wireName,
+      },
+    );
+    return _parseListResult(envelope, DataJob.fromJson);
+  }
+
+  @override
+  Future<DataJob> createImportJob(
+    AuthSession session,
+    CreateImportJobInput input,
+  ) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/imports',
+      body: input.toJson(),
+    );
+    return DataJob.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  @override
+  Future<DataJob> runImportJob(
+    AuthSession session,
+    String jobId,
+  ) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/imports/$jobId/run',
+      body: const {},
+    );
+    return DataJob.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  @override
+  Future<DataJob> createExportJob(
+    AuthSession session,
+    CreateExportJobInput input,
+  ) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/exports',
+      body: input.toJson(),
+    );
+    return DataJob.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
 }
 
 class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
   InMemoryBaseGovernanceRepository()
     : _roles = _seedRoles(),
-      _auditEvents = _seedAuditEvents();
+      _auditEvents = _seedAuditEvents(),
+      _dataJobs = _seedDataJobs();
 
   final Random _random = Random();
   final List<BaseGovernanceRole> _roles;
   final List<BaseGovernanceSetting> _settings = _seedSettings();
   final List<BaseGovernanceAuditEvent> _auditEvents;
+  final List<DataJob> _dataJobs;
   final Map<String, List<String>> _roleKeysByUserId = <String, List<String>>{
     'user_admin': const ['platform_admin'],
     'user_operator': const ['operator'],
@@ -660,6 +757,12 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
       _permissionOverridesByUserId[session.user.id] ?? const <String>[],
     );
     return effective;
+  }
+
+  String _jobId() {
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final suffix = _random.nextInt(999999).toString().padLeft(6, '0');
+    return 'job_$stamp$suffix';
   }
 
   void _requirePermission(AuthSession session, String permissionKey) {
@@ -1146,6 +1249,303 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
       ),
     );
   }
+
+  @override
+  Future<BaseGovernanceListResult<DataJob>> listDataJobs(
+    AuthSession session, {
+    String? search,
+    DataJobEntity? entity,
+    DataJobType? type,
+    DataJobStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    _requirePermission(session, BaseGovernancePermissions.dataJobsRead);
+    final tenantId = _tenantId(session);
+    final normalizedSearch = search?.trim().toLowerCase();
+    final filtered = _dataJobs
+        .where((job) => job.tenantId == tenantId)
+        .where((job) => entity == null || job.entity == entity)
+        .where((job) => type == null || job.type == type)
+        .where((job) => status == null || job.status == status)
+        .where((job) {
+          if (normalizedSearch == null || normalizedSearch.isEmpty) {
+            return true;
+          }
+          return [
+            job.fileName,
+            job.entity.wireName,
+            job.type.wireName,
+            job.status.wireName,
+          ].join(' ').toLowerCase().contains(normalizedSearch);
+        })
+        .toList(growable: false)
+      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
+
+    final start = (page - 1) * pageSize;
+    final items = start >= filtered.length
+        ? const <DataJob>[]
+        : filtered.skip(start).take(pageSize).toList(growable: false);
+
+    return BaseGovernanceListResult<DataJob>(
+      items: items,
+      pagination: PaginationInfo(
+        page: page,
+        pageSize: pageSize,
+        totalItems: filtered.length,
+        hasNextPage: start + pageSize < filtered.length,
+      ),
+    );
+  }
+
+  @override
+  Future<DataJob> createImportJob(
+    AuthSession session,
+    CreateImportJobInput input,
+  ) async {
+    _requirePermission(session, BaseGovernancePermissions.dataJobsManage);
+    final tenantId = _tenantId(session);
+    final lines = input.content
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    final headers = lines.first.split(',').map((item) => item.trim()).toList();
+    final rows = lines.skip(1).map((line) {
+      final values = line.split(',').map((item) => item.trim()).toList();
+      return Map<String, String>.fromEntries(
+        headers.asMap().entries.map(
+          (entry) => MapEntry(entry.value, values.elementAtOrNull(entry.key) ?? ''),
+        ),
+      );
+    }).toList(growable: false);
+
+    final mappedRows = rows.map((row) => Map<String, String>.from(row)).toList();
+    final errors = <DataJobError>[];
+    for (var index = 0; index < mappedRows.length; index += 1) {
+      final row = mappedRows[index];
+      if (input.entity == DataJobEntity.roles && (row['permissionKeys'] ?? '').isEmpty) {
+        errors.add(
+          DataJobError(
+            row: index + 1,
+            field: 'permissionKeys',
+            message: 'Informe ao menos uma permissao.',
+          ),
+        );
+      }
+    }
+
+    final job = DataJob(
+      id: _jobId(),
+      tenantId: tenantId,
+      type: DataJobType.import,
+      entity: input.entity,
+      format: input.format,
+      status: errors.isEmpty ? DataJobStatus.validated : DataJobStatus.failed,
+      fileName: input.fileName,
+      companyId: input.companyId,
+      establishmentId: input.establishmentId,
+      mode: input.mode,
+      mapping: input.mapping,
+      filters: const {},
+      totalRows: mappedRows.length,
+      validRows: mappedRows.length - errors.length,
+      invalidRows: errors.length,
+      errors: errors,
+      previewRows: mappedRows.asMap().entries.map(
+        (entry) => DataJobPreviewRow(
+          rowNumber: entry.key + 1,
+          values: entry.value,
+          valid: errors.where((error) => error.row == entry.key + 1).isEmpty,
+        ),
+      ).take(20).toList(growable: false),
+      createdBy: session.user.id,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+
+    _dataJobs.insert(0, job);
+    return job;
+  }
+
+  @override
+  Future<DataJob> runImportJob(
+    AuthSession session,
+    String jobId,
+  ) async {
+    _requirePermission(session, BaseGovernancePermissions.dataJobsManage);
+    final current = _dataJobs.firstWhere(
+      (job) => job.id == jobId,
+      orElse: () => throw const AppFailure(
+        title: 'Registro nao encontrado',
+        message: 'Job de importacao nao encontrado.',
+        code: 'NOT_FOUND',
+      ),
+    );
+
+    if (current.errors.isNotEmpty) {
+      throw const AppFailure(
+        title: 'Revise os dados informados',
+        message: 'Corrija os erros da pre-validacao antes de executar o job.',
+        code: 'VALIDATION_ERROR',
+      );
+    }
+
+    if (current.entity == DataJobEntity.roles) {
+      for (final row in current.previewRows) {
+        final key = row.values['key']?.toString().trim() ?? '';
+        final permissionKeys = _parseDelimitedValues(
+          row.values['permissionKeys']?.toString() ?? '',
+        );
+        final existing = _roles.firstWhereOrNull((item) => item.key == key);
+        if (existing == null) {
+          _roles.insert(
+            0,
+            BaseGovernanceRole(
+              roleId: 'role_${_jobId()}',
+              tenantId: current.tenantId,
+              key: key,
+              name: row.values['name']?.toString().trim() ?? key,
+              description: row.values['description']?.toString().trim(),
+              permissionKeys: permissionKeys,
+              companyIds: _parseDelimitedValues(
+                row.values['companyIds']?.toString() ?? '',
+              ),
+              establishmentIds: _parseDelimitedValues(
+                row.values['establishmentIds']?.toString() ?? '',
+              ),
+              costCenterIds: _parseDelimitedValues(
+                row.values['costCenterIds']?.toString() ?? '',
+              ),
+              status: GovernanceRecordStatus.fromWire(
+                row.values['status']?.toString() ?? 'draft',
+              ),
+              version: 0,
+              createdAt: DateTime.now().toUtc().toIso8601String(),
+              createdBy: session.user.id,
+            ),
+          );
+        }
+      }
+    }
+
+    final updated = DataJob(
+      id: current.id,
+      tenantId: current.tenantId,
+      type: current.type,
+      entity: current.entity,
+      format: current.format,
+      status: DataJobStatus.completed,
+      fileName: current.fileName,
+      companyId: current.companyId,
+      establishmentId: current.establishmentId,
+      mode: current.mode,
+      mapping: current.mapping,
+      filters: current.filters,
+      totalRows: current.totalRows,
+      validRows: current.validRows,
+      invalidRows: current.invalidRows,
+      errors: current.errors,
+      previewRows: current.previewRows,
+      outputPreview: current.outputPreview,
+      createdBy: current.createdBy,
+      createdAt: current.createdAt,
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+      completedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    final index = _dataJobs.indexWhere((job) => job.id == jobId);
+    _dataJobs[index] = updated;
+    _auditEvents.insert(
+      0,
+      _buildAuditEvent(
+        tenantId: current.tenantId,
+        actorUserId: session.user.id,
+        entityType: 'data_job',
+        entityId: current.id,
+        action: 'data_job.completed',
+        after: <String, dynamic>{
+          'status': updated.status.wireName,
+          'entity': updated.entity.wireName,
+        },
+      ),
+    );
+    return updated;
+  }
+
+  @override
+  Future<DataJob> createExportJob(
+    AuthSession session,
+    CreateExportJobInput input,
+  ) async {
+    _requirePermission(session, BaseGovernancePermissions.dataJobsManage);
+    final tenantId = _tenantId(session);
+    final rows = switch (input.entity) {
+      DataJobEntity.settings => _settings
+          .where((item) => item.tenantId == tenantId)
+          .map((item) => {
+            'settingKey': item.settingKey,
+            'moduleKey': item.moduleKey,
+            'scopeType': item.scopeType.wireName,
+          })
+          .toList(growable: false),
+      DataJobEntity.audit => _auditEvents
+          .where((item) => item.tenantId == tenantId)
+          .map((item) => {
+            'entityType': item.entityType,
+            'entityId': item.entityId,
+            'action': item.action,
+          })
+          .toList(growable: false),
+      _ => _roles
+          .where((item) => item.tenantId == tenantId)
+          .map((item) => {
+            'key': item.key,
+            'name': item.name,
+            'status': item.status.wireName,
+          })
+          .toList(growable: false),
+    };
+    final headers = rows.isEmpty ? const <String>[] : rows.first.keys.toList();
+    final outputPreview = [
+      headers.join(','),
+      ...rows.take(20).map(
+        (row) => headers.map((header) => row[header]).join(','),
+      ),
+    ].join('\r\n');
+
+    final job = DataJob(
+      id: _jobId(),
+      tenantId: tenantId,
+      type: DataJobType.export,
+      entity: input.entity,
+      format: input.format,
+      status: DataJobStatus.completed,
+      fileName: input.fileName,
+      companyId: input.companyId,
+      establishmentId: input.establishmentId,
+      mapping: const [],
+      filters: input.filters,
+      totalRows: rows.length,
+      validRows: rows.length,
+      invalidRows: 0,
+      errors: const [],
+      previewRows: rows.asMap().entries.map(
+        (entry) => DataJobPreviewRow(
+          rowNumber: entry.key + 1,
+          values: Map<String, dynamic>.from(entry.value),
+          valid: true,
+        ),
+      ).take(20).toList(growable: false),
+      outputPreview: outputPreview,
+      createdBy: session.user.id,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+      completedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+
+    _dataJobs.insert(0, job);
+    return job;
+  }
 }
 
 const List<PermissionCatalogEntry>
@@ -1426,6 +1826,40 @@ List<BaseGovernanceSetting> _seedSettings() {
       version: 0,
       createdAt: '2026-04-26T18:15:00.000Z',
       createdBy: 'user_admin',
+    ),
+  ];
+}
+
+List<DataJob> _seedDataJobs() {
+  return const <DataJob>[
+    DataJob(
+      id: 'job_seed_roles_export',
+      tenantId: 'tenant_demo',
+      type: DataJobType.export,
+      entity: DataJobEntity.roles,
+      format: DataJobFormat.csv,
+      status: DataJobStatus.completed,
+      fileName: 'roles-seed.csv',
+      mapping: <DataJobMappingEntry>[],
+      filters: <String, dynamic>{},
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+      errors: <DataJobError>[],
+      previewRows: <DataJobPreviewRow>[
+        DataJobPreviewRow(
+          rowNumber: 1,
+          values: <String, dynamic>{
+            'key': 'platform_admin',
+            'name': 'Administrador da plataforma',
+          },
+          valid: true,
+        ),
+      ],
+      outputPreview: 'key,name\r\nplatform_admin,Administrador da plataforma',
+      createdBy: 'user_admin',
+      createdAt: '2026-04-26T18:30:00.000Z',
+      completedAt: '2026-04-26T18:30:02.000Z',
     ),
   ];
 }

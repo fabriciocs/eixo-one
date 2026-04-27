@@ -6,6 +6,8 @@ export const BASE_GOVERNANCE_PERMISSIONS = {
   settingsRead: 'settings.read',
   settingsManage: 'settings.manage',
   auditRead: 'audit.read',
+  dataJobsRead: 'data_jobs.read',
+  dataJobsManage: 'data_jobs.manage',
 } as const;
 
 export const permissionCatalog: PermissionCatalogEntry[] = [
@@ -65,6 +67,22 @@ export const permissionCatalog: PermissionCatalogEntry[] = [
     moduleKey: 'audit',
     actionKey: 'read',
     scopeTypes: ['TENANT'],
+  },
+  {
+    key: 'data_jobs.read',
+    label: 'Consultar importacoes e exportacoes',
+    description: 'Lista jobs administrativos de importacao, exportacao e seus resultados.',
+    moduleKey: 'data_jobs',
+    actionKey: 'read',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
+    key: 'data_jobs.manage',
+    label: 'Gerenciar importacoes e exportacoes',
+    description: 'Cria jobs, executa processamentos e acompanha erros administrativos.',
+    moduleKey: 'data_jobs',
+    actionKey: 'manage',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
   },
   {
     key: 'governance.company.read',

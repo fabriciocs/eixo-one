@@ -1,9 +1,14 @@
 import {
+  createExportJobRequestSchema,
+  createImportJobRequestSchema,
   createRoleRequestSchema,
+  dataJobIdSchema,
   listAuditEventsQuerySchema,
+  listDataJobsQuerySchema,
   listRolesQuerySchema,
   listSettingsQuerySchema,
   resetSettingRequestSchema,
+  runImportJobRequestSchema,
   roleIdSchema,
   settingKeySchema,
   updateRoleRequestSchema,
@@ -21,6 +26,10 @@ const roleIdParamsSchema = z.object({
 
 const settingKeyParamsSchema = z.object({
   settingKey: settingKeySchema,
+});
+
+const dataJobIdParamsSchema = z.object({
+  jobId: dataJobIdSchema,
 });
 
 export function createBaseGovernanceController(dependencies: AppDependencies) {
@@ -153,6 +162,63 @@ export function createBaseGovernanceController(dependencies: AppDependencies) {
           },
         },
       );
+    },
+    listDataJobs: async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = listDataJobsQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listDataJobs(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        {
+          items: result.items,
+        },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    createImportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = createImportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.createImportJob(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, job);
+    },
+    runImportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = dataJobIdParamsSchema.parse(request.params);
+      const body = runImportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.runImportJob(
+        request.auth!,
+        params.jobId,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, job);
+    },
+    createExportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = createExportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.createExportJob(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, job);
     },
   };
 }

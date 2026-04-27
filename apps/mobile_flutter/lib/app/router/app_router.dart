@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/firebase/firebase_bootstrap.dart';
 import '../../core/layout/app_shell.dart';
 import '../../features/app_shell/presentation/pages/audit_page.dart';
+import '../../features/app_shell/presentation/pages/data_jobs_page.dart';
 import '../../features/app_shell/presentation/pages/modules_page.dart';
 import '../../features/app_shell/presentation/pages/notifications_page.dart';
 import '../../features/app_shell/presentation/pages/profile_page.dart';
@@ -119,6 +120,10 @@ GoRouter buildAppRouter(FirebaseBootstrapState firebaseState) {
           GoRoute(
             path: '/audit',
             builder: (context, state) => const AuditPage(),
+          ),
+          GoRoute(
+            path: '/data-jobs',
+            builder: (context, state) => const DataJobsPage(),
           ),
           GoRoute(
             path: '/notifications',

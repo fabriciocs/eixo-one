@@ -7,9 +7,11 @@ import {
   auditEventSchema,
   baseGovernanceRoleSchema,
   baseGovernanceSettingSchema,
+  dataJobSchema,
   type AuditEvent,
   type BaseGovernanceRole,
   type BaseGovernanceSetting,
+  type DataJob,
   type SettingScopeType,
 } from '@eixoone/shared-contracts';
 
@@ -19,6 +21,7 @@ import type {
   BaseGovernanceListResult,
   BaseGovernanceRepository,
   ListAuditFilters,
+  ListDataJobsFilters,
   ListRolesFilters,
   ListSettingsFilters,
 } from '../application/base-governance.repository.js';
@@ -71,6 +74,10 @@ export class FirestoreBaseGovernanceRepository
 
   private settingsCollection() {
     return this.firestore.collection('settings');
+  }
+
+  private dataJobsCollection() {
+    return this.firestore.collection('data_jobs');
   }
 
   private settingDocumentId(input: {
@@ -365,11 +372,68 @@ export class FirestoreBaseGovernanceRepository
     return paginate(events, filters.page, filters.pageSize);
   }
 
+  async listDataJobs(
+    tenantId: string,
+    filters: ListDataJobsFilters,
+  ): Promise<BaseGovernanceListResult<DataJob>> {
+    const snapshot = await this.dataJobsCollection()
+      .where('tenantId', '==', tenantId)
+      .get();
+    const normalizedSearch = filters.search?.trim().toLowerCase();
+    const jobs = snapshot.docs
+      .map((documentSnapshot) =>
+        dataJobSchema.parse(documentSnapshot.data()) as DataJob,
+      )
+      .filter((job) => !filters.entity || job.entity === filters.entity)
+      .filter((job) => !filters.type || job.type === filters.type)
+      .filter((job) => !filters.status || job.status === filters.status)
+      .filter((job) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [job.fileName, job.entity, job.type, job.status]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return paginate(jobs, filters.page, filters.pageSize);
+  }
+
+  async findDataJobById(tenantId: string, jobId: string) {
+    const snapshot = await this.dataJobsCollection().doc(jobId).get();
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    const job = dataJobSchema.parse(snapshot.data()) as DataJob;
+    return job.tenantId === tenantId ? job : null;
+  }
+
+  async createDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    await this.dataJobsCollection()
+      .doc(parsedJob.id)
+      .set(sanitizeFirestoreData(parsedJob) as unknown as DocumentData);
+    return parsedJob;
+  }
+
+  async saveDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    await this.dataJobsCollection()
+      .doc(parsedJob.id)
+      .set(sanitizeFirestoreData(parsedJob) as unknown as DocumentData);
+    return parsedJob;
+  }
+
   async isReady() {
     try {
       await Promise.all([
         this.rolesCollection().limit(1).select(FieldPath.documentId()).get(),
         this.settingsCollection().limit(1).select(FieldPath.documentId()).get(),
+        this.dataJobsCollection().limit(1).select(FieldPath.documentId()).get(),
       ]);
       return true;
     } catch {

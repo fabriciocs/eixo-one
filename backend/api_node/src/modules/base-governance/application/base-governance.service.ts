@@ -8,12 +8,22 @@ import {
   type AuditEvent,
   type BaseGovernanceRole,
   type BaseGovernanceSetting,
+  type CreateExportJobRequest,
+  type CreateImportJobRequest,
   type CreateRoleRequest,
+  dataJobSchema,
+  type DataJob,
+  type DataJobEntity,
+  type DataJobError,
+  type DataJobMappingEntry,
+  type DataJobPreviewRow,
+  type ListDataJobsQuery,
   type ListAuditEventsQuery,
   type ListRolesQuery,
   type ListSettingsQuery,
   type PermissionCatalogEntry,
   type ResetSettingRequest,
+  type RunImportJobRequest,
   type SettingScopeType,
   type SettingValue,
   type SettingValueType,
@@ -34,6 +44,7 @@ import {
 import type {
   BaseGovernanceRepository,
   ListAuditFilters,
+  ListDataJobsFilters,
   ListRolesFilters,
   ListSettingsFilters,
 } from './base-governance.repository.js';
@@ -49,6 +60,10 @@ function normalizeStringList(values: string[]) {
 
 function generateRoleId() {
   return `role_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`;
+}
+
+function generateDataJobId() {
+  return `job_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }
 
 type SettingDefinition = {
@@ -120,6 +135,34 @@ const settingDefinitionsMap = new Map(
   settingDefinitions.map((definition) => [definition.settingKey, definition]),
 );
 
+type ParsedTabularData = {
+  headers: string[];
+  rows: Record<string, string>[];
+};
+
+const importEntityFields: Record<DataJobEntity, string[]> = {
+  roles: [
+    'key',
+    'name',
+    'description',
+    'status',
+    'permissionKeys',
+    'companyIds',
+    'establishmentIds',
+    'costCenterIds',
+  ],
+  settings: [
+    'settingKey',
+    'scopeType',
+    'companyId',
+    'establishmentId',
+    'value',
+  ],
+  customers: [],
+  audit: [],
+  privacy_requests: [],
+};
+
 export class BaseGovernanceService {
   constructor(
     private readonly repository: BaseGovernanceRepository,
@@ -140,6 +183,231 @@ export class BaseGovernanceService {
           field: 'permissionKeys',
           message: `Permissao desconhecida: ${permissionKey}.`,
         })),
+      );
+    }
+  }
+
+  private sanitizeExportValue(value: unknown) {
+    const stringValue =
+      typeof value === 'string'
+        ? value
+        : typeof value === 'object' && value !== null
+        ? JSON.stringify(value)
+        : `${value ?? ''}`;
+
+    if (/^[=+\-@]/.test(stringValue)) {
+      return `'${stringValue}`;
+    }
+
+    return stringValue;
+  }
+
+  private parseCsvLine(line: string) {
+    const values: string[] = [];
+    let current = '';
+    let insideQuotes = false;
+
+    for (let index = 0; index < line.length; index += 1) {
+      const character = line[index];
+      const nextCharacter = line[index + 1];
+
+      if (character === '"') {
+        if (insideQuotes && nextCharacter === '"') {
+          current += '"';
+          index += 1;
+          continue;
+        }
+
+        insideQuotes = !insideQuotes;
+        continue;
+      }
+
+      if (character === ',' && !insideQuotes) {
+        values.push(current.trim());
+        current = '';
+        continue;
+      }
+
+      current += character;
+    }
+
+    values.push(current.trim());
+    return values;
+  }
+
+  private parseTabularContent(content: string): ParsedTabularData {
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'A importacao precisa conter cabecalho e pelo menos uma linha.',
+      );
+    }
+
+    const headers = this.parseCsvLine(lines[0] ?? '').map((header) => header.trim());
+    const rows = lines.slice(1).map((line) => {
+      const values = this.parseCsvLine(line);
+      return Object.fromEntries(
+        headers.map((header, index) => [header, values[index] ?? '']),
+      );
+    });
+
+    return {
+      headers,
+      rows,
+    };
+  }
+
+  private normalizeMapping(
+    headers: string[],
+    mapping: DataJobMappingEntry[],
+    entity: DataJobEntity,
+  ) {
+    if (mapping.length > 0) {
+      return mapping;
+    }
+
+    const knownFields = new Set(importEntityFields[entity] ?? []);
+    return headers
+      .filter((header) => knownFields.has(header))
+      .map((header) => ({
+        sourceColumn: header,
+        targetField: header,
+        required: ['key', 'name', 'permissionKeys', 'settingKey', 'scopeType', 'value'].includes(
+          header,
+        ),
+      }));
+  }
+
+  private mapRows(
+    rows: Record<string, string>[],
+    mapping: DataJobMappingEntry[],
+  ): Record<string, string>[] {
+    return rows.map((row) =>
+      Object.fromEntries(
+        mapping.map((entry) => [entry.targetField, row[entry.sourceColumn] ?? '']),
+      ),
+    );
+  }
+
+  private splitListValue(value?: string) {
+    return [...new Set((value ?? '')
+      .split(/[|;,]/)
+      .map((item) => item.trim())
+      .filter(Boolean))].sort();
+  }
+
+  private validateImportRows(input: {
+    entity: DataJobEntity;
+    rows: Record<string, string>[];
+    mapping: DataJobMappingEntry[];
+  }) {
+    const errors: DataJobError[] = [];
+    const previewRows: DataJobPreviewRow[] = [];
+
+    input.rows.forEach((row, index) => {
+      const rowNumber = index + 1;
+      const rowErrors: DataJobError[] = [];
+
+      for (const entry of input.mapping.filter((item) => item.required)) {
+        if (!(row[entry.targetField] ?? '').trim()) {
+          rowErrors.push({
+            row: rowNumber,
+            field: entry.targetField,
+            message: `Campo obrigatorio sem valor: ${entry.targetField}.`,
+          });
+        }
+      }
+
+      if (input.entity === 'roles') {
+        if ((row.permissionKeys ?? '').trim().length === 0) {
+          rowErrors.push({
+            row: rowNumber,
+            field: 'permissionKeys',
+            message: 'Informe ao menos uma permissao por linha.',
+          });
+        }
+
+        const status = (row.status ?? 'draft').trim();
+        if (status && !['draft', 'active', 'inactive'].includes(status)) {
+          rowErrors.push({
+            row: rowNumber,
+            field: 'status',
+            message: 'Status de perfil invalido.',
+          });
+        }
+      }
+
+      if (input.entity === 'settings') {
+        const scopeType = (row.scopeType ?? '').trim();
+        if (
+          scopeType &&
+          !['TENANT', 'COMPANY', 'ESTABLISHMENT'].includes(scopeType)
+        ) {
+          rowErrors.push({
+            row: rowNumber,
+            field: 'scopeType',
+            message: 'Escopo de configuracao invalido.',
+          });
+        }
+
+        if (
+          (scopeType === 'COMPANY' || scopeType === 'ESTABLISHMENT') &&
+          !(row.companyId ?? '').trim()
+        ) {
+          rowErrors.push({
+            row: rowNumber,
+            field: 'companyId',
+            message: 'companyId obrigatorio para o escopo informado.',
+          });
+        }
+
+        if (scopeType === 'ESTABLISHMENT' && !(row.establishmentId ?? '').trim()) {
+          rowErrors.push({
+            row: rowNumber,
+            field: 'establishmentId',
+            message: 'establishmentId obrigatorio para o escopo ESTABLISHMENT.',
+          });
+        }
+      }
+
+      previewRows.push({
+        rowNumber,
+        values: Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [key, value ?? '']),
+        ),
+        valid: rowErrors.length === 0,
+      });
+      errors.push(...rowErrors);
+    });
+
+    return {
+      errors,
+      previewRows: previewRows.slice(0, 20),
+    };
+  }
+
+  private assertSupportedImportEntity(entity: DataJobEntity) {
+    if (!['roles', 'settings'].includes(entity)) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'O MVP atual suporta importacao apenas para roles e settings.',
+      );
+    }
+  }
+
+  private assertSupportedExportEntity(entity: DataJobEntity) {
+    if (!['roles', 'settings', 'audit'].includes(entity)) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'O MVP atual suporta exportacao apenas para roles, settings e audit.',
       );
     }
   }
@@ -602,5 +870,317 @@ export class BaseGovernanceService {
     };
 
     return this.repository.listAudit(auth.tenantId, filters);
+  }
+
+  async listDataJobs(auth: AuthContext, query: ListDataJobsQuery) {
+    const filters: ListDataJobsFilters = {
+      search: normalizeSearch(query.search),
+      entity: query.entity,
+      type: query.type,
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+
+    return this.repository.listDataJobs(auth.tenantId, filters);
+  }
+
+  async createImportJob(
+    auth: AuthContext,
+    payload: CreateImportJobRequest,
+    context: RequestContextData,
+  ) {
+    this.assertSupportedImportEntity(payload.entity);
+    const parsed = this.parseTabularContent(payload.content);
+    const mapping = this.normalizeMapping(parsed.headers, payload.mapping, payload.entity);
+    const mappedRows = this.mapRows(parsed.rows, mapping);
+    const validation = this.validateImportRows({
+      entity: payload.entity,
+      rows: mappedRows,
+      mapping,
+    });
+    const now = new Date().toISOString();
+
+    const job = dataJobSchema.parse({
+      id: generateDataJobId(),
+      tenantId: auth.tenantId,
+      type: 'import',
+      entity: payload.entity,
+      format: payload.format,
+      status: validation.errors.length === 0 ? 'validated' : 'failed',
+      fileName: payload.fileName,
+      companyId: payload.companyId,
+      establishmentId: payload.establishmentId,
+      mode: payload.mode,
+      mapping,
+      filters: {},
+      totalRows: mappedRows.length,
+      validRows: mappedRows.length - validation.errors.length,
+      invalidRows: validation.errors.length,
+      errors: validation.errors,
+      previewRows: validation.previewRows,
+      createdBy: auth.uid,
+      createdAt: now,
+      updatedAt: now,
+    }) as DataJob;
+
+    const savedJob = await this.repository.createDataJob(job);
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'data_job.created',
+      entityType: 'data_job',
+      entityId: savedJob.id,
+      after: {
+        type: savedJob.type,
+        entity: savedJob.entity,
+        status: savedJob.status,
+        totalRows: savedJob.totalRows,
+      },
+      metadata: {
+        fileName: savedJob.fileName,
+        format: savedJob.format,
+      },
+    });
+
+    return savedJob;
+  }
+
+  async runImportJob(
+    auth: AuthContext,
+    jobId: string,
+    _payload: RunImportJobRequest,
+    context: RequestContextData,
+  ) {
+    const currentJob = await this.repository.findDataJobById(auth.tenantId, jobId);
+    if (!currentJob || currentJob.type !== 'import') {
+      throw new AppError(404, 'NOT_FOUND', 'Job de importacao nao encontrado.');
+    }
+
+    if (currentJob.errors.length > 0 || currentJob.status === 'failed') {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Corrija os erros de validacao antes de executar o job.',
+      );
+    }
+
+    const processingJob = await this.repository.saveDataJob({
+      ...currentJob,
+      status: 'processing',
+      updatedAt: new Date().toISOString(),
+    });
+
+    const reconstructedRows = processingJob.previewRows.map((row) => row.values);
+
+    if (processingJob.entity === 'roles') {
+      for (const row of reconstructedRows) {
+        const currentRole = await this.repository.findRoleByKey(auth.tenantId, row.key);
+        if (currentRole) {
+          await this.updateRole(
+            auth,
+            currentRole.roleId,
+            {
+              expectedVersion: currentRole.version,
+              key: row.key,
+              name: row.name,
+              description: row.description || undefined,
+              permissionKeys: this.splitListValue(row.permissionKeys),
+              companyIds: this.splitListValue(row.companyIds),
+              establishmentIds: this.splitListValue(row.establishmentIds),
+              costCenterIds: this.splitListValue(row.costCenterIds),
+              status: (row.status || currentRole.status) as UpdateRoleRequest['status'],
+            },
+            context,
+          );
+          continue;
+        }
+
+        await this.createRole(
+          auth,
+          {
+            key: row.key,
+            name: row.name,
+            description: row.description || undefined,
+            permissionKeys: this.splitListValue(row.permissionKeys),
+            companyIds: this.splitListValue(row.companyIds),
+            establishmentIds: this.splitListValue(row.establishmentIds),
+            costCenterIds: this.splitListValue(row.costCenterIds),
+            status: (row.status || 'draft') as CreateRoleRequest['status'],
+          },
+          context,
+        );
+      }
+    }
+
+    if (processingJob.entity === 'settings') {
+      for (const row of reconstructedRows) {
+        const definition = this.requireSettingDefinition(row.settingKey);
+        const rawValue = row.value ?? '';
+        let parsedValue: SettingValue;
+
+        if (definition.valueType === 'json') {
+          parsedValue = JSON.parse(rawValue);
+        } else if (definition.valueType === 'boolean') {
+          parsedValue = rawValue.trim().toLowerCase() === 'true';
+        } else if (definition.valueType === 'number') {
+          parsedValue = Number(rawValue);
+        } else {
+          parsedValue = rawValue;
+        }
+
+        const currentSetting = await this.repository.findSetting({
+          tenantId: auth.tenantId,
+          settingKey: row.settingKey,
+          scopeType: row.scopeType as SettingScopeType,
+          companyId: row.companyId || undefined,
+          establishmentId: row.establishmentId || undefined,
+        });
+
+        await this.updateSetting(
+          auth,
+          row.settingKey,
+          {
+            scopeType: row.scopeType as SettingScopeType,
+            companyId: row.companyId || undefined,
+            establishmentId: row.establishmentId || undefined,
+            value: parsedValue,
+            expectedVersion: currentSetting?.version ?? 0,
+          },
+          context,
+        );
+      }
+    }
+
+    const completedJob = await this.repository.saveDataJob({
+      ...processingJob,
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'data_job.completed',
+      entityType: 'data_job',
+      entityId: completedJob.id,
+      before: {
+        status: currentJob.status,
+      },
+      after: {
+        status: completedJob.status,
+        validRows: completedJob.validRows,
+      },
+      metadata: {
+        entity: completedJob.entity,
+      },
+    });
+
+    return completedJob;
+  }
+
+  async createExportJob(
+    auth: AuthContext,
+    payload: CreateExportJobRequest,
+    context: RequestContextData,
+  ) {
+    this.assertSupportedExportEntity(payload.entity);
+
+    let rows: Record<string, unknown>[] = [];
+    if (payload.entity === 'roles') {
+      rows = (await this.repository.listRoles(auth.tenantId, {
+        page: 1,
+        pageSize: 200,
+      })).items.map((role) => ({
+        key: role.key,
+        name: role.name,
+        status: role.status,
+        permissionKeys: role.permissionKeys.join('|'),
+      }));
+    }
+
+    if (payload.entity === 'settings') {
+      rows = (await this.repository.listSettings(auth.tenantId, {
+        page: 1,
+        pageSize: 200,
+      })).items.map((setting) => ({
+        settingKey: setting.settingKey,
+        scopeType: setting.scopeType,
+        moduleKey: setting.moduleKey,
+        value: this.sanitizeExportValue(setting.value),
+      }));
+    }
+
+    if (payload.entity === 'audit') {
+      rows = (await this.repository.listAudit(auth.tenantId, {
+        page: 1,
+        pageSize: 200,
+      })).items.map((event) => ({
+        entityType: event.entityType,
+        entityId: event.entityId,
+        action: event.action,
+        createdAt: event.createdAt,
+      }));
+    }
+
+    const headers = Object.keys(rows[0] ?? {});
+    const outputPreview = [
+      headers.join(','),
+      ...rows.slice(0, 20).map((row) =>
+        headers
+          .map((header) => this.sanitizeExportValue(row[header]))
+          .join(','),
+      ),
+    ].join('\r\n');
+    const now = new Date().toISOString();
+
+    const job = dataJobSchema.parse({
+      id: generateDataJobId(),
+      tenantId: auth.tenantId,
+      type: 'export',
+      entity: payload.entity,
+      format: payload.format,
+      status: 'completed',
+      fileName: payload.fileName,
+      companyId: payload.companyId,
+      establishmentId: payload.establishmentId,
+      filters: payload.filters,
+      totalRows: rows.length,
+      validRows: rows.length,
+      invalidRows: 0,
+      errors: [],
+      previewRows: rows.slice(0, 20).map((row, index) => ({
+        rowNumber: index + 1,
+        values: Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [key, `${value ?? ''}`]),
+        ),
+        valid: true,
+      })),
+      outputPreview,
+      createdBy: auth.uid,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    }) as DataJob;
+
+    const savedJob = await this.repository.createDataJob(job);
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'data_job.exported',
+      entityType: 'data_job',
+      entityId: savedJob.id,
+      after: {
+        entity: savedJob.entity,
+        totalRows: savedJob.totalRows,
+      },
+      metadata: {
+        format: savedJob.format,
+        fileName: savedJob.fileName,
+      },
+    });
+
+    return savedJob;
   }
 }

@@ -1,6 +1,7 @@
 import 'package:eixoone_mobile/core/network/network_status.dart';
 import 'package:eixoone_mobile/core/network/network_status_provider.dart';
 import 'package:eixoone_mobile/features/app_shell/presentation/pages/audit_page.dart';
+import 'package:eixoone_mobile/features/app_shell/presentation/pages/data_jobs_page.dart';
 import 'package:eixoone_mobile/features/app_shell/presentation/pages/roles_page.dart';
 import 'package:eixoone_mobile/features/app_shell/presentation/pages/settings_page.dart';
 import 'package:eixoone_mobile/features/auth/presentation/controllers/auth_providers.dart';
@@ -158,6 +159,30 @@ void main() {
     expect(find.text('Sem permissao para configuracoes'), findsOneWidget);
   });
 
+  testWidgets('data jobs page loads seeded jobs and workspace', (tester) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _adminSession(), child: const DataJobsPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Historico de jobs'), findsOneWidget);
+    expect(find.text('Novo job e detalhe'), findsOneWidget);
+    expect(find.text('roles-seed.csv'), findsOneWidget);
+  });
+
+  testWidgets('data jobs page blocks operator without permission', (tester) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _operatorSession(), child: const DataJobsPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sem permissao para importacao/exportacao'), findsOneWidget);
+  });
+
   testWidgets('consolidation page stays read-only for operator profile', (
     tester,
   ) async {
@@ -228,6 +253,8 @@ AuthSession _adminSession() {
         'settings.read',
         'settings.manage',
         'audit.read',
+        'data_jobs.read',
+        'data_jobs.manage',
       ],
       moduleKeys: ['dashboard', 'governance', 'roles', 'audit'],
     ),

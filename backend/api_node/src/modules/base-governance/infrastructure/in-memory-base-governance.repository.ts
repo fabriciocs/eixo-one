@@ -2,12 +2,14 @@ import type {
   AuditEvent,
   BaseGovernanceRole,
   BaseGovernanceSetting,
+  DataJob,
   SettingScopeType,
 } from '@eixoone/shared-contracts';
 
 import {
   baseGovernanceRoleSchema,
   baseGovernanceSettingSchema,
+  dataJobSchema,
 } from '@eixoone/shared-contracts';
 
 import { InMemoryAuditLogWriter } from '../../../core/audit/audit-log-writer.js';
@@ -16,6 +18,7 @@ import type {
   BaseGovernanceListResult,
   BaseGovernanceRepository,
   ListAuditFilters,
+  ListDataJobsFilters,
   ListRolesFilters,
   ListSettingsFilters,
 } from '../application/base-governance.repository.js';
@@ -149,6 +152,9 @@ export class InMemoryBaseGovernanceRepository
       setting,
     ]),
   );
+  private readonly dataJobs = new Map<string, DataJob>(
+    seedDataJobs.map((job) => [this.dataJobKey(job.tenantId, job.id), job]),
+  );
 
   constructor(private readonly auditLogWriter?: InMemoryAuditLogWriter) {}
 
@@ -170,6 +176,10 @@ export class InMemoryBaseGovernanceRepository
       input.companyId ?? '_',
       input.establishmentId ?? '_',
     ].join(':');
+  }
+
+  private dataJobKey(tenantId: string, jobId: string) {
+    return `${tenantId}:${jobId}`;
   }
 
   async listRoles(
@@ -327,6 +337,47 @@ export class InMemoryBaseGovernanceRepository
     return paginate(events, filters.page, filters.pageSize);
   }
 
+  async listDataJobs(
+    tenantId: string,
+    filters: ListDataJobsFilters,
+  ): Promise<BaseGovernanceListResult<DataJob>> {
+    const normalizedSearch = normalizeSearch(filters.search);
+    const jobs = [...this.dataJobs.values()]
+      .filter((job) => job.tenantId === tenantId)
+      .filter((job) => !filters.entity || job.entity === filters.entity)
+      .filter((job) => !filters.type || job.type === filters.type)
+      .filter((job) => !filters.status || job.status === filters.status)
+      .filter((job) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [job.fileName, job.entity, job.type, job.status]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return paginate(jobs, filters.page, filters.pageSize);
+  }
+
+  async findDataJobById(tenantId: string, jobId: string) {
+    return this.dataJobs.get(this.dataJobKey(tenantId, jobId)) ?? null;
+  }
+
+  async createDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    this.dataJobs.set(this.dataJobKey(parsedJob.tenantId, parsedJob.id), parsedJob);
+    return parsedJob;
+  }
+
+  async saveDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    this.dataJobs.set(this.dataJobKey(parsedJob.tenantId, parsedJob.id), parsedJob);
+    return parsedJob;
+  }
+
   async isReady() {
     return true;
   }
@@ -402,3 +453,34 @@ const seedSettings = [
     createdBy: 'system_seed',
   }),
 ] as const satisfies readonly BaseGovernanceSetting[];
+
+const seedDataJobs = [
+  dataJobSchema.parse({
+    id: 'job_seed_roles_export',
+    tenantId: 'tenant_demo',
+    type: 'export',
+    entity: 'roles',
+    format: 'csv',
+    status: 'completed',
+    fileName: 'roles-seed.csv',
+    filters: {},
+    totalRows: 2,
+    validRows: 2,
+    invalidRows: 0,
+    errors: [],
+    previewRows: [
+      {
+        rowNumber: 1,
+        values: {
+          key: 'platform_admin',
+          name: 'Platform admin',
+        },
+        valid: true,
+      },
+    ],
+    outputPreview: 'key,name\r\nplatform_admin,Platform admin',
+    createdBy: 'system_seed',
+    createdAt: '2026-04-26T18:30:00.000Z',
+    completedAt: '2026-04-26T18:30:02.000Z',
+  }),
+] as const satisfies readonly DataJob[];
