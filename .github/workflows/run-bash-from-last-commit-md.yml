@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      EXTRACTED_SCRIPT: ${{ runner.temp }}/extracted-bash-blocks.sh
+      EXTRACTED_SCRIPT: ${{ github.workspace }}/extracted-bash-blocks.sh
 
     steps:
       # Faz checkout do repositório para permitir leitura do último commit e dos arquivos versionados.
