@@ -47,4 +47,4 @@ O workflow valida:
 - caminhos internos do ZIP para reduzir risco de Zip Slip;
 - destino de extração relativo ao workspace.
 
-Em cenários mais sensíveis, prefira uma primeira execução com `dry_run = true` para revisar o ZIP e os comandos antes da aplicação real.
+Em cenários mais sensíveis, prefira uma primeira execução com `dry_run = true` para revisar o ZIP e os comandos antes da aplicação real. 
