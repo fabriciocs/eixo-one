@@ -249,6 +249,7 @@ jobs:
       # Mantém a melhoria anterior: se a mensagem do commit citar um .md,
       # extrai somente blocos delimitados por ```bash e ```.
       - name: Extract bash blocks from Markdown
+        id: extract_bash
         if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
@@ -296,9 +297,16 @@ jobs:
 
           chmod 700 "${EXTRACTED_SCRIPT}"
 
+          if grep -q '[^[:space:]]' "${EXTRACTED_SCRIPT}"; then
+            echo "has_bash_blocks=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "has_bash_blocks=false" >> "${GITHUB_OUTPUT}"
+            echo "Nenhum comando bash executável foi encontrado no Markdown."
+          fi
+
       # Exibe os comandos extraídos do Markdown, quando houver.
       - name: Show extracted bash commands
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -347,15 +355,10 @@ jobs:
 
       # Executa os blocos bash do Markdown apenas quando essa opção estiver habilitada.
       - name: Execute extracted bash commands from Markdown
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.execute_bash_from_markdown == 'true' && steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.execute_bash_from_markdown == 'true' && steps.detect_files.outputs.markdown_file != '' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ ! -s "${EXTRACTED_SCRIPT}" ]]; then
-            echo "Nenhum comando bash extraído para executar."
-            exit 0
-          fi
 
           bash -euo pipefail "${EXTRACTED_SCRIPT}"
 
