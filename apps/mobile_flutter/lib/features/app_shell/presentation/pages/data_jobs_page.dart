@@ -160,6 +160,9 @@ class _DataJobsPageState extends ConsumerState<DataJobsPage> {
       }
 
       await _loadJobs(keepJobId: job.id);
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Job de importacao criado.')),
       );
@@ -202,6 +205,9 @@ class _DataJobsPageState extends ConsumerState<DataJobsPage> {
       }
 
       await _loadJobs(keepJobId: job.id);
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Job executado com sucesso.')),
       );
@@ -250,6 +256,9 @@ class _DataJobsPageState extends ConsumerState<DataJobsPage> {
       }
 
       await _loadJobs(keepJobId: job.id);
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Job de exportacao criado.')),
       );

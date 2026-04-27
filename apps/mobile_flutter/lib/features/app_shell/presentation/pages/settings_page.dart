@@ -221,6 +221,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       }
 
       await _loadSettings(keepSettingKey: savedSetting.settingKey);
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Configuracao atualizada com sucesso.')),
       );
@@ -282,6 +285,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       }
 
       await _loadSettings(keepSettingKey: savedSetting.settingKey);
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Configuracao restaurada para o padrao.')),
       );
