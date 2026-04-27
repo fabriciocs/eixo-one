@@ -12,11 +12,13 @@ import {
   InMemoryAuditLogWriter,
   type AuditLogWriter,
 } from './core/audit/audit-log-writer.js';
+import { FirestoreAuditLogWriter } from './core/audit/firestore-audit-log-writer.js';
 import { createLoggerConfig } from './core/logging/logger.js';
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from './core/resilience/idempotency-store.js';
+import { FirestoreIdempotencyStore } from './core/resilience/firestore-idempotency-store.js';
 import { createFirebaseClients } from './integrations/firebase/admin-app.js';
 import {
   type AuthVerifier,
@@ -24,6 +26,10 @@ import {
 } from './middlewares/authentication.middleware.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { requestContextMiddleware } from './middlewares/request-context.middleware.js';
+import type { GovernanceRepository } from './modules/governance/application/governance-repository.js';
+import { GovernanceService } from './modules/governance/application/governance-service.js';
+import { FirestoreGovernanceRepository } from './modules/governance/infrastructure/firestore-governance.repository.js';
+import { InMemoryGovernanceRepository } from './modules/governance/infrastructure/in-memory-governance.repository.js';
 import { FirestoreUserRepository } from './modules/users/infrastructure/firestore-user.repository.js';
 import { InMemoryUserRepository } from './modules/users/infrastructure/in-memory-user.repository.js';
 import type { UserRepository } from './modules/users/application/user-repository.js';
@@ -64,13 +70,15 @@ export type AppDependencies = {
   env: AppEnv;
   authVerifier: AuthVerifier;
   userRepository: UserRepository;
+  governanceRepository: GovernanceRepository;
   auditLogWriter: AuditLogWriter;
   idempotencyStore: IdempotencyStore;
   userService: UserService;
+  governanceService: GovernanceService;
 };
 
 type DependencyOverrides = Partial<
-  Omit<AppDependencies, 'userService' | 'env'>
+  Omit<AppDependencies, 'userService' | 'governanceService' | 'env'>
 > & {
   env?: Partial<AppEnv>;
 };
@@ -134,12 +142,29 @@ export function createDependencies(
     (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
       ? new FirestoreUserRepository(firebaseClients.firestore)
       : new InMemoryUserRepository());
+  const governanceRepository =
+    overrides.governanceRepository ??
+    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
+      ? new FirestoreGovernanceRepository(firebaseClients.firestore)
+      : new InMemoryGovernanceRepository());
 
-  const auditLogWriter = overrides.auditLogWriter ?? new InMemoryAuditLogWriter();
+  const auditLogWriter =
+    overrides.auditLogWriter ??
+    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
+      ? new FirestoreAuditLogWriter(firebaseClients.firestore)
+      : new InMemoryAuditLogWriter());
   const idempotencyStore =
-    overrides.idempotencyStore ?? new InMemoryIdempotencyStore();
+    overrides.idempotencyStore ??
+    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
+      ? new FirestoreIdempotencyStore(firebaseClients.firestore)
+      : new InMemoryIdempotencyStore());
   const userService = new UserService(
     userRepository,
+    idempotencyStore,
+    auditLogWriter,
+  );
+  const governanceService = new GovernanceService(
+    governanceRepository,
     idempotencyStore,
     auditLogWriter,
   );
@@ -148,9 +173,11 @@ export function createDependencies(
     env: resolvedEnv,
     authVerifier,
     userRepository,
+    governanceRepository,
     auditLogWriter,
     idempotencyStore,
     userService,
+    governanceService,
   };
 }
 

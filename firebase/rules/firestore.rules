@@ -99,6 +99,30 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /tenants/{tenantId}/domains/governance/companies/{companyId} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/domains/governance/establishments/{establishmentId} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/domains/governance/user_scope_grants/{userId} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/domains/governance/user_contexts/{userId} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/domains/governance/sharing_policies/{policyId} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/domains/governance/consolidation_runs/{runId} {
+      allow read, write: if false;
+    }
+
     match /idempotency_records/{recordId} {
       allow read, write: if false;
     }

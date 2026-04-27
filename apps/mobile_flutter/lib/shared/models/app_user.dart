@@ -16,5 +16,14 @@ class AppUser {
   bool hasPermission(String permissionKey) {
     return permissionKeys.contains(permissionKey);
   }
-}
 
+  bool hasAnyPermission(Iterable<String> requiredPermissions) {
+    for (final permission in requiredPermissions) {
+      if (hasPermission(permission)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+}

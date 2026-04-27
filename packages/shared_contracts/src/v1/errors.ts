@@ -5,6 +5,7 @@ export const errorCodeValues = [
   'FORBIDDEN',
   'VALIDATION_ERROR',
   'CONFLICT',
+  'VERSION_CONFLICT',
   'NOT_FOUND',
   'RATE_LIMITED',
   'DEPENDENCY_UNAVAILABLE',
@@ -12,6 +13,19 @@ export const errorCodeValues = [
   'INTERNAL_ERROR',
   'INVALID_STATE_TRANSITION',
   'IDEMPOTENCY_CONFLICT',
+  'TENANT_ACCESS_DENIED',
+  'COMPANY_ACCESS_DENIED',
+  'BRANCH_ACCESS_DENIED',
+  'DUPLICATE_RECORD',
+  'COMPANY_ALREADY_HAS_PRIMARY_MATRIX',
+  'GRANT_SCOPE_INCONSISTENT',
+  'INVALID_ESTABLISHMENT_TYPE',
+  'ARCHIVE_BLOCKED',
+  'CONTEXT_SCOPE_INVALID',
+  'SHARING_POLICY_INVALID',
+  'CONSOLIDATION_PARAMETERS_INCOMPLETE',
+  'CONSOLIDATION_MAPPING_MISSING',
+  'CONSOLIDATION_RUN_IN_PROGRESS',
 ] as const;
 
 export const errorCodeSchema = z.enum(errorCodeValues);
@@ -30,4 +44,3 @@ export const apiErrorSchema = z.object({
 
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
-

@@ -33,6 +33,10 @@ service firebase.storage {
         validMetadata(tenantId);
     }
 
+    match /tenants/{tenantId}/governance/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

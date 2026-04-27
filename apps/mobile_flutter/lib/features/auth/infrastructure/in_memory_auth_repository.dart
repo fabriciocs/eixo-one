@@ -37,13 +37,66 @@ class InMemoryAuthRepository implements AuthRepository {
       );
     }
 
+    if (credentials.normalizedEmail == 'operador@eixo.one') {
+      return AuthSession(
+        user: const AppUser(
+          id: 'user_operator',
+          email: 'operador@eixo.one',
+          displayName: 'Operador EixoOne',
+          permissionKeys: [
+            'governance.company.read',
+            'governance.establishment.read',
+            'governance.context.switch',
+            'reporting.consolidated.read',
+          ],
+          moduleKeys: ['dashboard', 'governance'],
+        ),
+        organizations: const [
+          OrganizationSummary(
+            id: 'tenant_demo',
+            name: 'EixoOne Demo',
+            roleLabel: 'Operador',
+          ),
+        ],
+        selectedOrganizationId: 'tenant_demo',
+      );
+    }
+
     return AuthSession(
       user: AppUser(
         id: 'user_admin',
         email: credentials.normalizedEmail,
         displayName: 'Admin EixoOne',
-        permissionKeys: const ['users.read', 'users.manage', 'audit.read'],
-        moduleKeys: const ['dashboard', 'users', 'roles', 'audit'],
+        permissionKeys: const [
+          'users.read',
+          'users.manage',
+          'audit.read',
+          'governance.company.read',
+          'governance.company.create',
+          'governance.company.update',
+          'governance.company.activate',
+          'governance.company.inactivate',
+          'governance.company.archive',
+          'governance.establishment.read',
+          'governance.establishment.create',
+          'governance.establishment.update',
+          'governance.establishment.activate',
+          'governance.establishment.inactivate',
+          'governance.establishment.archive',
+          'governance.user_scope.manage',
+          'governance.context.switch',
+          'governance.sharing.policy.manage',
+          'governance.consolidation.read',
+          'governance.consolidation.run',
+          'reporting.consolidated.read',
+        ],
+        moduleKeys: const [
+          'dashboard',
+          'users',
+          'roles',
+          'audit',
+          'governance',
+        ],
       ),
       organizations: const [
         OrganizationSummary(

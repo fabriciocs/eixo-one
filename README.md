@@ -17,6 +17,7 @@ Base evolutiva para um monorepo `Flutter + Firebase + Node.js/TypeScript`, com f
     /rules
   /docs
     /architecture
+    /functional-specs
     /operations
     /setup
     /ux-ui
@@ -29,6 +30,7 @@ Base evolutiva para um monorepo `Flutter + Firebase + Node.js/TypeScript`, com f
 
 - `packages/shared_contracts` com contratos versionados `v1`, schemas Zod, envelopes de API, codigos de erro e metadados padronizados.
 - `backend/api_node` com Fastify, middlewares de autenticacao/autorizacao, correlacao, logs JSON, health/readiness, idempotencia, maquina de estados, auditoria e testes.
+- `backend/api_node` com modulo `governance` multiempresa/multifilial persistido em Firestore quando `DATA_MODE=firebase`, mantendo fallback em memoria para testes unitarios e bootstraps locais.
 - `apps/mobile_flutter` com design system Material 3, sessao local, formularios validados, retry, feedback inline, camada de repositorios/servicos, `firebase_options.dart` gerado e testes de widget.
 - Regras Firebase para Firestore/Storage, indices iniciais, validacao estatica e separacao de ambientes.
 - Base Google Cloud/Firebase de `dev` provisionada com `eixoone-dev`, billing ativo, Firestore Native, bucket padrao de Storage, service accounts, secrets populados para backend, Artifact Registry e Cloud Run.
@@ -142,6 +144,12 @@ npm run emulators:seed
 npm run test:emulators
 ```
 
+Opcao mais direta para validacao ponta a ponta em uma unica execucao:
+
+```bash
+firebase emulators:exec --only auth,firestore,storage "npm run test:emulators"
+```
+
 ### Validacao da fundacao GCloud/Firebase
 
 ```powershell
@@ -191,13 +199,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\08-deploy-cloud-run-ap
 - Configurar provedores de Authentication e App Check no console Firebase.
 - Decidir quando o dashboard Flutter deixa de usar repositorios em memoria e passa para Firestore/API por padrao.
 - Definir a malha oficial de `custom claims` por tenant, papel e modulo.
-- Conectar a gravacao de auditoria e idempotencia a colecoes reais no Firestore ou outro storage transacional.
+- Trocar o repositório de `governance` de Firestore para projeções e consultas mais especializadas se o volume do tenant crescer significativamente.
 
 ## Proximos passos
 
 1. Adicionar repositores reais do Flutter com Firebase Auth/Firestore/Storage.
 2. Criar primeiros dominios de negocio alem de `users`, como `crm` e `finance`.
-3. Implementar seeds para emuladores Firebase e smoke tests de rules.
+3. Expandir os smoke tests de emuladores para cenarios de falha, concorrencia e versionamento otimista.
 4. Fechar deploy automatizado da API em Cloud Run com ambientes `staging` e `production`.
 
 ## Documentacao

@@ -15,6 +15,12 @@ class AppShell extends ConsumerWidget {
 
   static const _destinations = <_NavDestination>[
     _NavDestination('Dashboard', '/dashboard', Icons.dashboard_outlined, Icons.dashboard),
+    _NavDestination(
+      'Governanca',
+      '/governance',
+      Icons.account_tree_outlined,
+      Icons.account_tree,
+    ),
     _NavDestination('Modulos', '/modules', Icons.grid_view_outlined, Icons.grid_view),
     _NavDestination('Usuarios', '/users', Icons.group_outlined, Icons.group),
     _NavDestination('Papeis', '/roles', Icons.verified_user_outlined, Icons.verified_user),

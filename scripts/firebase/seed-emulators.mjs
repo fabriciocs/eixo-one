@@ -8,6 +8,12 @@ import {
   emulatorConfig,
   readSeedStorageContent,
   seedAuthUsers,
+  seedGovernanceCompanies,
+  seedGovernanceConsolidationRuns,
+  seedGovernanceContexts,
+  seedGovernanceEstablishments,
+  seedGovernanceGrants,
+  seedGovernanceSharingPolicies,
   seedOrganizations,
   seedStorageObject,
   seedUsers,
@@ -81,6 +87,90 @@ export async function seedEmulators() {
     batch.set(firestore.collection('users').doc(user.id), user, { merge: true });
   }
 
+  for (const company of seedGovernanceCompanies) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(company.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('companies')
+        .doc(company.companyId),
+      company,
+      { merge: true },
+    );
+  }
+
+  for (const establishment of seedGovernanceEstablishments) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(establishment.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('establishments')
+        .doc(establishment.establishmentId),
+      establishment,
+      { merge: true },
+    );
+  }
+
+  for (const grant of seedGovernanceGrants) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(grant.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('user_scope_grants')
+        .doc(grant.userId),
+      grant,
+      { merge: true },
+    );
+  }
+
+  for (const context of seedGovernanceContexts) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(context.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('user_contexts')
+        .doc(context.userId),
+      context,
+      { merge: true },
+    );
+  }
+
+  for (const policy of seedGovernanceSharingPolicies) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(policy.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('sharing_policies')
+        .doc(policy.policyId),
+      policy,
+      { merge: true },
+    );
+  }
+
+  for (const run of seedGovernanceConsolidationRuns) {
+    batch.set(
+      firestore
+        .collection('tenants')
+        .doc(run.tenantId)
+        .collection('domains')
+        .doc('governance')
+        .collection('consolidation_runs')
+        .doc(run.runId),
+      run,
+      { merge: true },
+    );
+  }
+
   await batch.commit();
 
   const storageFile = bucket.file(seedStorageObject.path);
@@ -103,6 +193,9 @@ export async function seedEmulators() {
   );
   console.log(
     `[seed-emulators] Firestore organizations=${seedOrganizations.length} users=${seedUsers.length}.`,
+  );
+  console.log(
+    `[seed-emulators] Governance companies=${seedGovernanceCompanies.length} establishments=${seedGovernanceEstablishments.length} grants=${seedGovernanceGrants.length}.`,
   );
   console.log(
     `[seed-emulators] Storage bucket=${emulatorConfig.storageBucket} object=${seedStorageObject.path}.`,

@@ -70,6 +70,36 @@ export async function runEmulatorRulesTest() {
     await assertFails(getDoc(doc(operatorDb, 'organizations', 'tenant_ops')));
     await assertSucceeds(getDoc(doc(operatorDb, 'users', 'user_admin')));
     await assertFails(getDoc(doc(operatorDb, 'users', 'user_external')));
+    await assertFails(
+      getDoc(
+        doc(
+          operatorDb,
+          'tenants',
+          'tenant_demo',
+          'domains',
+          'governance',
+          'companies',
+          'cmp_demo',
+        ),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(
+          operatorDb,
+          'tenants',
+          'tenant_demo',
+          'domains',
+          'governance',
+          'user_contexts',
+          'user_operator',
+        ),
+        {
+          tenantId: 'tenant_demo',
+          userId: 'user_operator',
+        },
+      ),
+    );
 
     await assertSucceeds(
       uploadString(
@@ -101,6 +131,24 @@ export async function runEmulatorRulesTest() {
           contentType: 'text/csv',
           customMetadata: {
             tenantId: 'tenant_ops',
+            uploadedBy: 'user_operator',
+          },
+        },
+      ),
+    );
+
+    await assertFails(
+      uploadString(
+        ref(
+          operatorStorage,
+          `tenants/tenant_demo/governance/licenses/cmp_demo/est_demo_matrix/license-${Date.now()}.pdf`,
+        ),
+        'pdf-content',
+        'raw',
+        {
+          contentType: 'application/pdf',
+          customMetadata: {
+            tenantId: 'tenant_demo',
             uploadedBy: 'user_operator',
           },
         },

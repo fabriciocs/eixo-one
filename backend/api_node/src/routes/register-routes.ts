@@ -1,12 +1,54 @@
-import { changeUserStatusBodySchema, listUsersQuerySchema } from '@eixoone/shared-contracts';
+import {
+  changeUserStatusBodySchema,
+  companyIdSchema,
+  companyStatusTransitionBodySchema,
+  createCompanyRequestSchema,
+  createConsolidationRunRequestSchema,
+  createEstablishmentRequestSchema,
+  createSharingPolicyRequestSchema,
+  establishmentIdSchema,
+  establishmentStatusTransitionBodySchema,
+  listCompaniesQuerySchema,
+  listConsolidationRunsQuerySchema,
+  listEstablishmentsQuerySchema,
+  listSharingPoliciesQuerySchema,
+  listUsersQuerySchema,
+  sharingPolicyIdSchema,
+  switchOperationalContextRequestSchema,
+  updateCompanyRequestSchema,
+  updateEstablishmentRequestSchema,
+  updateSharingPolicyRequestSchema,
+  upsertUserScopeGrantRequestSchema,
+} from '@eixoone/shared-contracts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { authenticationMiddleware } from '../middlewares/authentication.middleware.js';
 import { authorizationMiddleware } from '../middlewares/authorization.middleware.js';
 import { validateRequest } from '../middlewares/validation.middleware.js';
-import type { AppDependencies } from '../server.js';
+import { createGovernanceController } from '../modules/governance/interfaces/http/governance.controller.js';
 import { createUserController } from '../modules/users/interfaces/http/user.controller.js';
+import type { AppDependencies } from '../server.js';
+
+const userIdParamsSchema = z.object({
+  userId: z.string().trim().min(3).max(128),
+});
+
+const companyIdParamsSchema = z.object({
+  companyId: companyIdSchema,
+});
+
+const establishmentIdParamsSchema = z.object({
+  establishmentId: establishmentIdSchema,
+});
+
+const sharingPolicyIdParamsSchema = z.object({
+  policyId: sharingPolicyIdSchema,
+});
+
+const consolidationRunIdParamsSchema = z.object({
+  runId: z.string().trim().min(5).max(64),
+});
 
 export async function registerRoutes(
   app: FastifyInstance,
@@ -14,6 +56,7 @@ export async function registerRoutes(
 ) {
   const requireAuth = authenticationMiddleware(dependencies);
   const usersController = createUserController(dependencies);
+  const governanceController = createGovernanceController(dependencies);
 
   app.get('/health', async (_request, reply) => {
     reply.header('cache-control', 'no-store');
@@ -28,14 +71,26 @@ export async function registerRoutes(
   });
 
   app.get('/ready', async (_request, reply) => {
-    const [authReady, repoReady, auditReady, idempotencyReady] = await Promise.all([
+    const [
+      authReady,
+      userRepositoryReady,
+      governanceRepositoryReady,
+      auditReady,
+      idempotencyReady,
+    ] = await Promise.all([
       dependencies.authVerifier.isReady(),
       dependencies.userRepository.isReady(),
+      dependencies.governanceRepository.isReady(),
       dependencies.auditLogWriter.isReady(),
       dependencies.idempotencyStore.isReady(),
     ]);
 
-    const isReady = authReady && repoReady && auditReady && idempotencyReady;
+    const isReady =
+      authReady &&
+      userRepositoryReady &&
+      governanceRepositoryReady &&
+      auditReady &&
+      idempotencyReady;
 
     reply.code(isReady ? 200 : 503);
 
@@ -43,7 +98,8 @@ export async function registerRoutes(
       status: isReady ? 'ready' : 'degraded',
       checks: {
         authVerifier: authReady,
-        userRepository: repoReady,
+        userRepository: userRepositoryReady,
+        governanceRepository: governanceRepositoryReady,
         auditLogWriter: auditReady,
         idempotencyStore: idempotencyReady,
       },
@@ -74,14 +130,396 @@ export async function registerRoutes(
         requireAuth,
         authorizationMiddleware('users.manage'),
         validateRequest({
-          params: z.object({
-            userId: z.string().trim().min(3).max(128),
-          }),
+          params: userIdParamsSchema,
           body: changeUserStatusBodySchema,
         }),
       ],
     },
     usersController.changeStatus,
   );
-}
 
+  app.get(
+    '/v1/governance/companies',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.read'),
+        validateRequest({
+          querystring: listCompaniesQuerySchema,
+        }),
+      ],
+    },
+    governanceController.listCompanies,
+  );
+
+  app.get(
+    '/v1/governance/companies/:companyId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.read'),
+        validateRequest({
+          params: companyIdParamsSchema,
+        }),
+      ],
+    },
+    governanceController.getCompany,
+  );
+
+  app.post(
+    '/v1/governance/companies',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.create'),
+        validateRequest({
+          body: createCompanyRequestSchema,
+        }),
+      ],
+    },
+    governanceController.createCompany,
+  );
+
+  app.patch(
+    '/v1/governance/companies/:companyId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.update'),
+        validateRequest({
+          params: companyIdParamsSchema,
+          body: updateCompanyRequestSchema,
+        }),
+      ],
+    },
+    governanceController.updateCompany,
+  );
+
+  app.post(
+    '/v1/governance/companies/:companyId/activate',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.activate'),
+        validateRequest({
+          params: companyIdParamsSchema,
+          body: companyStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionCompanyStatus(
+        request,
+        reply,
+        'activate',
+      ),
+  );
+
+  app.post(
+    '/v1/governance/companies/:companyId/inactivate',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.inactivate'),
+        validateRequest({
+          params: companyIdParamsSchema,
+          body: companyStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionCompanyStatus(
+        request,
+        reply,
+        'inactivate',
+      ),
+  );
+
+  app.post(
+    '/v1/governance/companies/:companyId/archive',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.company.archive'),
+        validateRequest({
+          params: companyIdParamsSchema,
+          body: companyStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionCompanyStatus(request, reply, 'archive'),
+  );
+
+  app.get(
+    '/v1/governance/establishments',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.read'),
+        validateRequest({
+          querystring: listEstablishmentsQuerySchema,
+        }),
+      ],
+    },
+    governanceController.listEstablishments,
+  );
+
+  app.get(
+    '/v1/governance/establishments/:establishmentId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.read'),
+        validateRequest({
+          params: establishmentIdParamsSchema,
+        }),
+      ],
+    },
+    governanceController.getEstablishment,
+  );
+
+  app.post(
+    '/v1/governance/establishments',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.create'),
+        validateRequest({
+          body: createEstablishmentRequestSchema,
+        }),
+      ],
+    },
+    governanceController.createEstablishment,
+  );
+
+  app.patch(
+    '/v1/governance/establishments/:establishmentId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.update'),
+        validateRequest({
+          params: establishmentIdParamsSchema,
+          body: updateEstablishmentRequestSchema,
+        }),
+      ],
+    },
+    governanceController.updateEstablishment,
+  );
+
+  app.post(
+    '/v1/governance/establishments/:establishmentId/activate',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.activate'),
+        validateRequest({
+          params: establishmentIdParamsSchema,
+          body: establishmentStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionEstablishmentStatus(
+        request,
+        reply,
+        'activate',
+      ),
+  );
+
+  app.post(
+    '/v1/governance/establishments/:establishmentId/inactivate',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.inactivate'),
+        validateRequest({
+          params: establishmentIdParamsSchema,
+          body: establishmentStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionEstablishmentStatus(
+        request,
+        reply,
+        'inactivate',
+      ),
+  );
+
+  app.post(
+    '/v1/governance/establishments/:establishmentId/archive',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.establishment.archive'),
+        validateRequest({
+          params: establishmentIdParamsSchema,
+          body: establishmentStatusTransitionBodySchema,
+        }),
+      ],
+    },
+    (request, reply) =>
+      governanceController.transitionEstablishmentStatus(
+        request,
+        reply,
+        'archive',
+      ),
+  );
+
+  app.get(
+    '/v1/governance/users/:userId/scope-grants',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.user_scope.manage'),
+        validateRequest({
+          params: userIdParamsSchema,
+        }),
+      ],
+    },
+    governanceController.getUserScopeGrant,
+  );
+
+  app.put(
+    '/v1/governance/users/:userId/scope-grants',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.user_scope.manage'),
+        validateRequest({
+          params: userIdParamsSchema,
+          body: upsertUserScopeGrantRequestSchema,
+        }),
+      ],
+    },
+    governanceController.upsertUserScopeGrant,
+  );
+
+  app.get(
+    '/v1/governance/me/accessible-scopes',
+    {
+      preHandler: [requireAuth],
+    },
+    governanceController.getAccessibleScopes,
+  );
+
+  app.get(
+    '/v1/governance/me/context',
+    {
+      preHandler: [requireAuth],
+    },
+    governanceController.getUserContext,
+  );
+
+  app.post(
+    '/v1/governance/me/context/switch',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.context.switch'),
+        validateRequest({
+          body: switchOperationalContextRequestSchema,
+        }),
+      ],
+    },
+    governanceController.switchOperationalContext,
+  );
+
+  app.get(
+    '/v1/governance/sharing-policies',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.sharing.policy.manage'),
+        validateRequest({
+          querystring: listSharingPoliciesQuerySchema,
+        }),
+      ],
+    },
+    governanceController.listSharingPolicies,
+  );
+
+  app.post(
+    '/v1/governance/sharing-policies',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.sharing.policy.manage'),
+        validateRequest({
+          body: createSharingPolicyRequestSchema,
+        }),
+      ],
+    },
+    governanceController.createSharingPolicy,
+  );
+
+  app.patch(
+    '/v1/governance/sharing-policies/:policyId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.sharing.policy.manage'),
+        validateRequest({
+          params: sharingPolicyIdParamsSchema,
+          body: updateSharingPolicyRequestSchema,
+        }),
+      ],
+    },
+    governanceController.updateSharingPolicy,
+  );
+
+  app.get(
+    '/v1/governance/consolidated/overview',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('reporting.consolidated.read'),
+      ],
+    },
+    governanceController.getConsolidatedOverview,
+  );
+
+  app.get(
+    '/v1/governance/consolidation-runs',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.consolidation.read'),
+        validateRequest({
+          querystring: listConsolidationRunsQuerySchema,
+        }),
+      ],
+    },
+    governanceController.listConsolidationRuns,
+  );
+
+  app.get(
+    '/v1/governance/consolidation-runs/:runId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.consolidation.read'),
+        validateRequest({
+          params: consolidationRunIdParamsSchema,
+        }),
+      ],
+    },
+    governanceController.getConsolidationRun,
+  );
+
+  app.post(
+    '/v1/governance/consolidation-runs',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware('governance.consolidation.run'),
+        validateRequest({
+          body: createConsolidationRunRequestSchema,
+        }),
+      ],
+    },
+    governanceController.createConsolidationRun,
+  );
+}

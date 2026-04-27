@@ -71,6 +71,8 @@ Cada modulo deve separar:
 ## Estado atual implementado
 
 - `users` e fluxo de mudanca de status como modulo de referencia.
+- `governance` com empresas, estabelecimentos, grants, contexto operacional, sharing policies e consolidation runs.
 - `health` e `ready`.
 - `shared_contracts` versionado em `v1`.
+- Persistencia real em Firestore para `users`, `governance`, auditoria e idempotencia quando `DATA_MODE=firebase`.
 - `Flutter` com sessao local e design system reutilizavel.

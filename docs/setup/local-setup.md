@@ -129,3 +129,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\gcloud\10-validate-flutter-fi
 ```bash
 npm run test:emulators
 ```
+
+Para subir os emuladores apenas durante a validacao:
+
+```bash
+firebase emulators:exec --only auth,firestore,storage "npm run test:emulators"
+```

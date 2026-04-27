@@ -6,6 +6,18 @@ class AppConfig {
   static const slogan = 'Gestao conectada. Decisoes claras.';
   static const contractVersion = 'v1';
   static const minTouchTarget = Size(44, 44);
+  static const apiBaseUrlOverride = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+  static const useGovernanceApi = bool.fromEnvironment(
+    'USE_GOVERNANCE_API',
+    defaultValue: false,
+  );
+  static const apiTimeoutSeconds = int.fromEnvironment(
+    'API_TIMEOUT_SECONDS',
+    defaultValue: 12,
+  );
   static const useFirebaseEmulators = bool.fromEnvironment(
     'USE_FIREBASE_EMULATORS',
     defaultValue: kDebugMode,
@@ -45,6 +57,23 @@ class AppConfig {
         return '10.0.2.2';
       default:
         return '127.0.0.1';
+    }
+  }
+
+  static String get apiBaseUrl {
+    if (apiBaseUrlOverride.isNotEmpty) {
+      return apiBaseUrlOverride;
+    }
+
+    if (kIsWeb) {
+      return 'http://127.0.0.1:4000';
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'http://10.0.2.2:4000';
+      default:
+        return 'http://127.0.0.1:4000';
     }
   }
 }
