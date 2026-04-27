@@ -14,15 +14,15 @@ Com isso, ele consegue validar e extrair um ZIP de código-fonte informado no co
 ## Exemplo de mensagem de commit
 
 ```text
-feat: aplicar fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip usando guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
+feat: aplicar docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip usando docs/actions-exec/guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
 ```
 
 ## Exemplo de comandos
 
-```bash
-git add fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip
-git add guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
-git commit -m "feat: aplicar fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip usando guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md"
+```text
+git add docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip
+git add docs/actions-exec/guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
+git commit -m "feat: aplicar docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip usando docs/actions-exec/guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md"
 git push
 ```
 
