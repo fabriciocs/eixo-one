@@ -4,6 +4,7 @@
 - Planilha funcional: `funcionalidades_sistemas_gestao_requisitos_com_prompts_codex_fullstack(2).xlsx`
 - Planilha UX/UI: `eixoone_planilha_uxui_funcionalidades_completa.xlsx`
 
+
 ## Resumo
 Funcionalidade de Cadastros Mestres para definir produtos, SKUs, categorias, unidades, preços, tributação, custo, estoque mínimo, lote, validade, imagens, status e código de barras.
 
