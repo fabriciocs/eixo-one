@@ -12,6 +12,8 @@ import '../../../../design_system/components/loading_state.dart';
 import '../../../../design_system/components/network_status_banner.dart';
 import '../../../../design_system/components/primary_button.dart';
 import '../../../auth/presentation/controllers/auth_providers.dart';
+import '../../../base_governance/models/base_governance_models.dart';
+import '../../../base_governance/repositories/base_governance_repository.dart';
 import '../../domain/models/governance_commands.dart';
 import '../../domain/models/governance_models.dart';
 import '../../domain/models/governance_permissions.dart';
@@ -35,9 +37,11 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
   UserScopeGrant? _grant;
   AppFailure? _usersFailure;
   AppFailure? _grantFailure;
+  AppFailure? _securityCatalogFailure;
   AppFailure? _saveFailure;
   bool _loadingUsers = false;
   bool _loadingGrant = false;
+  bool _loadingSecurityCatalog = false;
   bool _saving = false;
   String? _selectedUserId;
   bool _readOnlyAllowed = false;
@@ -45,6 +49,9 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
   String? _defaultEstablishmentId;
   final Set<String> _selectedCompanyIds = <String>{};
   final Set<String> _selectedEstablishmentIds = <String>{};
+  List<BaseGovernanceRole> _availableRoles = const <BaseGovernanceRole>[];
+  List<PermissionCatalogEntry> _permissionCatalog =
+      const <PermissionCatalogEntry>[];
   List<String> _roleKeys = const <String>[];
   List<String> _permissionOverrides = const <String>[];
 
@@ -52,6 +59,7 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
   void initState() {
     super.initState();
     _loadUsers();
+    _loadSecurityCatalog();
   }
 
   @override
@@ -73,17 +81,15 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
     });
 
     try {
-      final result = await ref.read(governanceRepositoryProvider).listUsers(
-            session,
-            GovernanceUserFilters(search: _normalizedSearch),
-          );
+      final result = await ref
+          .read(governanceRepositoryProvider)
+          .listUsers(session, GovernanceUserFilters(search: _normalizedSearch));
       if (!mounted) {
         return;
       }
 
-      final nextSelectedUserId = result.items.any(
-        (item) => item.id == _selectedUserId,
-      )
+      final nextSelectedUserId =
+          result.items.any((item) => item.id == _selectedUserId)
           ? _selectedUserId
           : result.items.firstOrNull?.id;
 
@@ -160,6 +166,49 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
     }
   }
 
+  Future<void> _loadSecurityCatalog() async {
+    final session = ref.read(authSessionProvider);
+    if (session == null) {
+      return;
+    }
+
+    setState(() {
+      _loadingSecurityCatalog = true;
+      _securityCatalogFailure = null;
+    });
+
+    try {
+      final repository = ref.read(baseGovernanceRepositoryProvider);
+      final results = await Future.wait<Object>([
+        repository.listRoles(session, pageSize: 100),
+        repository.listPermissionCatalog(session),
+      ]);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _availableRoles =
+            (results[0] as BaseGovernanceListResult<BaseGovernanceRole>).items;
+        _permissionCatalog = results[1] as List<PermissionCatalogEntry>;
+      });
+    } on AppFailure catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _securityCatalogFailure = error;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingSecurityCatalog = false;
+        });
+      }
+    }
+  }
+
   Future<void> _saveGrant(List<AccessibleCompanySummary> companies) async {
     final session = ref.read(authSessionProvider);
     if (session == null || _selectedUserId == null) {
@@ -214,11 +263,9 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
         _grant = savedGrant;
         _hydrateGrantDraft(savedGrant);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Grant salvo com sucesso.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Grant salvo com sucesso.')));
     } on AppFailure catch (error) {
       if (!mounted) {
         return;
@@ -271,10 +318,11 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
   List<UserScopeGrantCompany> _buildSelectedScopes(
     List<AccessibleCompanySummary> companies,
   ) {
-    final selectedCompanies = companies
-        .where((item) => _selectedCompanyIds.contains(item.companyId))
-        .toList(growable: false)
-      ..sort((left, right) => left.legalName.compareTo(right.legalName));
+    final selectedCompanies =
+        companies
+            .where((item) => _selectedCompanyIds.contains(item.companyId))
+            .toList(growable: false)
+          ..sort((left, right) => left.legalName.compareTo(right.legalName));
 
     return selectedCompanies
         .map(
@@ -282,9 +330,8 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
             companyId: company.companyId,
             establishmentIds: company.establishments
                 .where(
-                  (item) => _selectedEstablishmentIds.contains(
-                    item.establishmentId,
-                  ),
+                  (item) =>
+                      _selectedEstablishmentIds.contains(item.establishmentId),
                 )
                 .map((item) => item.establishmentId)
                 .toList(growable: false),
@@ -372,15 +419,66 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
     }
   }
 
+  Set<String> _effectiveGrantPermissions() {
+    final effective = <String>{..._permissionOverrides};
+
+    for (final roleKey in _roleKeys) {
+      final role = _availableRoles.firstWhereOrNull(
+        (item) => item.key == roleKey && item.isActive,
+      );
+      if (role == null) {
+        continue;
+      }
+      effective.addAll(role.permissionKeys);
+    }
+
+    return effective;
+  }
+
+  Map<String, List<PermissionCatalogEntry>> _groupPermissionCatalog() {
+    final grouped = <String, List<PermissionCatalogEntry>>{};
+    final sortedEntries = [..._permissionCatalog]
+      ..sort((left, right) {
+        final byModule = left.moduleKey.compareTo(right.moduleKey);
+        if (byModule != 0) {
+          return byModule;
+        }
+        return left.label.compareTo(right.label);
+      });
+
+    for (final entry in sortedEntries) {
+      grouped.putIfAbsent(entry.moduleKey, () => <PermissionCatalogEntry>[]);
+      grouped[entry.moduleKey]!.add(entry);
+    }
+
+    return grouped;
+  }
+
+  String _formatModuleLabel(String moduleKey) {
+    switch (moduleKey) {
+      case 'users':
+        return 'Usuarios';
+      case 'roles':
+        return 'Papeis';
+      case 'audit':
+        return 'Auditoria';
+      case 'reporting':
+        return 'Relatorios';
+      default:
+        return moduleKey.replaceAll('.', ' ').replaceAll('_', ' ');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(authSessionProvider);
     final workspace = ref.watch(governanceWorkspaceProvider);
-    final companies = workspace.value?.accessibleScopes.companies ??
+    final companies =
+        workspace.value?.accessibleScopes.companies ??
         const <AccessibleCompanySummary>[];
     final canManage =
         session?.user.hasPermission(GovernancePermissions.userScopeManage) ??
-            false;
+        false;
 
     return ResponsivePage(
       title: 'Grants e escopos',
@@ -472,52 +570,44 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
                     message: 'Carregando usuarios para grants...',
                   )
                 : _usersFailure != null
-                    ? ErrorState(
-                        failure: _usersFailure!,
-                        onRetry: _loadUsers,
-                      )
-                    : (_usersResult == null || _usersResult!.items.isEmpty)
-                        ? const EmptyState(
-                            title: 'Nenhum usuario encontrado',
-                            message:
-                                'A busca atual nao retornou usuarios elegiveis para grant.',
-                          )
-                        : ListView.separated(
-                            itemCount: _usersResult!.items.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 12),
-                            itemBuilder: (context, index) {
-                              final user = _usersResult!.items[index];
-                              final selected = user.id == _selectedUserId;
-                              return Material(
-                                color: selected
-                                    ? Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(16),
-                                child: ListTile(
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  selected: selected,
-                                  leading: CircleAvatar(
-                                    child: Text(
-                                      user.displayName.characters.first,
-                                    ),
-                                  ),
-                                  title: Text(user.displayName),
-                                  subtitle: Text(user.email),
-                                  trailing: GovernanceStatusBadge(
-                                    status: user.status == 'active'
-                                        ? GovernanceRecordStatus.active
-                                        : GovernanceRecordStatus.inactive,
-                                  ),
-                                  onTap: () => _loadGrant(user.id),
-                                ),
-                              );
-                            },
+                ? ErrorState(failure: _usersFailure!, onRetry: _loadUsers)
+                : (_usersResult == null || _usersResult!.items.isEmpty)
+                ? const EmptyState(
+                    title: 'Nenhum usuario encontrado',
+                    message:
+                        'A busca atual nao retornou usuarios elegiveis para grant.',
+                  )
+                : ListView.separated(
+                    itemCount: _usersResult!.items.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final user = _usersResult!.items[index];
+                      final selected = user.id == _selectedUserId;
+                      return Material(
+                        color: selected
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
+                          selected: selected,
+                          leading: CircleAvatar(
+                            child: Text(user.displayName.characters.first),
+                          ),
+                          title: Text(user.displayName),
+                          subtitle: Text(user.email),
+                          trailing: GovernanceStatusBadge(
+                            status: user.status == 'active'
+                                ? GovernanceRecordStatus.active
+                                : GovernanceRecordStatus.inactive,
+                          ),
+                          onTap: () => _loadGrant(user.id),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -555,8 +645,7 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
     if (_grant == null) {
       return const EmptyState(
         title: 'Grant indisponivel',
-        message:
-            'Nao foi possivel carregar o escopo deste usuario no momento.',
+        message: 'Nao foi possivel carregar o escopo deste usuario no momento.',
       );
     }
 
@@ -570,12 +659,17 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
     final defaultEstablishments = defaultCompany == null
         ? const <AccessibleEstablishmentSummary>[]
         : defaultCompany.establishments
-            .where(
-              (item) =>
-                  _selectedEstablishmentIds.isEmpty ||
-                  _selectedEstablishmentIds.contains(item.establishmentId),
-            )
-            .toList(growable: false);
+              .where(
+                (item) =>
+                    _selectedEstablishmentIds.isEmpty ||
+                    _selectedEstablishmentIds.contains(item.establishmentId),
+              )
+              .toList(growable: false);
+    final groupedPermissionCatalog = _groupPermissionCatalog();
+    final effectivePermissions = _effectiveGrantPermissions();
+    final orphanRoleKeys = _roleKeys
+        .where((roleKey) => !_availableRoles.any((item) => item.key == roleKey))
+        .toList(growable: false);
 
     return FormSection(
       title: 'Grant de $_selectedUserId',
@@ -615,7 +709,9 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
                   width: 240,
                   child: _SummaryMetric(
                     label: 'Tipo de acesso',
-                    value: _readOnlyAllowed ? 'Somente leitura' : 'Leitura e escrita',
+                    value: _readOnlyAllowed
+                        ? 'Somente leitura'
+                        : 'Leitura e escrita',
                   ),
                 ),
               ),
@@ -638,9 +734,7 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             initialValue: _defaultCompanyId,
-            decoration: const InputDecoration(
-              labelText: 'Empresa padrao',
-            ),
+            decoration: const InputDecoration(labelText: 'Empresa padrao'),
             items: [
               for (final company in selectedCompanies)
                 DropdownMenuItem(
@@ -722,6 +816,131 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
               ),
           ],
           const SizedBox(height: 16),
+          if (_loadingSecurityCatalog)
+            const AppCard(
+              child: LoadingState(
+                message: 'Carregando catalogo de papeis e permissoes...',
+              ),
+            )
+          else if (_securityCatalogFailure != null)
+            AppCard(
+              child: _securityCatalogFailure!.code == 'FORBIDDEN'
+                  ? const EmptyState(
+                      title: 'Catalogo de perfis indisponivel',
+                      message:
+                          'Sua sessao pode gerir grants, mas nao pode consultar o catalogo administrativo completo.',
+                    )
+                  : ErrorState(
+                      failure: _securityCatalogFailure!,
+                      onRetry: _loadSecurityCatalog,
+                    ),
+            )
+          else ...[
+            Text(
+              'Papeis atribuidos',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Use papeis como mecanismo principal e deixe overrides apenas para excecoes auditaveis.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final role in _availableRoles.where(
+                  (item) => item.isActive,
+                ))
+                  FilterChip(
+                    label: Text(role.name),
+                    selected: _roleKeys.contains(role.key),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _roleKeys = [..._roleKeys, role.key]..sort();
+                        } else {
+                          _roleKeys = _roleKeys
+                              .where((item) => item != role.key)
+                              .toList(growable: false);
+                        }
+                      });
+                    },
+                  ),
+              ],
+            ),
+            if (orphanRoleKeys.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final roleKey in orphanRoleKeys)
+                    Chip(label: Text('Role ausente: $roleKey')),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              'Overrides de permissao',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ative apenas quando a regra nao puder ser representada por um papel reutilizavel.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            for (final entry in groupedPermissionCatalog.entries)
+              ExpansionTile(
+                title: Text(_formatModuleLabel(entry.key)),
+                subtitle: Text('${entry.value.length} permissoes'),
+                children: [
+                  for (final permission in entry.value)
+                    CheckboxListTile(
+                      dense: true,
+                      value: _permissionOverrides.contains(permission.key),
+                      title: Text(permission.label),
+                      subtitle: Text(permission.description),
+                      onChanged: (selected) {
+                        setState(() {
+                          if (selected ?? false) {
+                            _permissionOverrides = [
+                              ..._permissionOverrides,
+                              permission.key,
+                            ]..sort();
+                          } else {
+                            _permissionOverrides = _permissionOverrides
+                                .where((item) => item != permission.key)
+                                .toList(growable: false);
+                          }
+                        });
+                      },
+                    ),
+                ],
+              ),
+            const SizedBox(height: 16),
+            Text(
+              'Permissoes efetivas previstas',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            effectivePermissions.isEmpty
+                ? const Text(
+                    'Nenhuma permissao efetiva sera concedida ate que um papel ou override seja selecionado.',
+                  )
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final permission
+                          in effectivePermissions.toList()..sort())
+                        Chip(label: Text(permission)),
+                    ],
+                  ),
+            const SizedBox(height: 16),
+          ],
           if (_roleKeys.isNotEmpty) ...[
             Text(
               'Papeis atuais',
@@ -781,10 +1000,7 @@ class _GrantsPageState extends ConsumerState<GrantsPage> {
 }
 
 class _SummaryMetric extends StatelessWidget {
-  const _SummaryMetric({
-    required this.label,
-    required this.value,
-  });
+  const _SummaryMetric({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -794,15 +1010,9 @@ class _SummaryMetric extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge,
-        ),
+        Text(label, style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 8),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
+        Text(value, style: Theme.of(context).textTheme.titleLarge),
       ],
     );
   }
@@ -820,6 +1030,19 @@ extension on List<GovernanceUserSummary> {
 extension on Iterable<AccessibleCompanySummary> {
   AccessibleCompanySummary? firstWhereOrNull(
     bool Function(AccessibleCompanySummary item) test,
+  ) {
+    for (final item in this) {
+      if (test(item)) {
+        return item;
+      }
+    }
+    return null;
+  }
+}
+
+extension on Iterable<BaseGovernanceRole> {
+  BaseGovernanceRole? firstWhereOrNull(
+    bool Function(BaseGovernanceRole item) test,
   ) {
     for (final item in this) {
       if (test(item)) {

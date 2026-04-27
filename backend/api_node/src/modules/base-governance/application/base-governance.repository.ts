@@ -1,56 +1,93 @@
-export interface RoleRecord {
-  id: string;
-  tenantId: string;
-  key: string;
-  name: string;
-  permissionKeys: string[];
-  companyIds: string[];
-  establishmentIds: string[];
-  status: "draft" | "active" | "inactive" | "archived";
-  version: number;
-  createdAt: string;
-  createdBy: string;
-  updatedAt?: string;
-  updatedBy?: string;
-}
+import type {
+  AuditEvent,
+  BaseGovernanceRole,
+  BaseGovernanceRoleStatus,
+  BaseGovernanceSetting,
+  ListSettingsQuery,
+  ResetSettingRequest,
+  SettingScopeType,
+  UpdateSettingRequest,
+} from '@eixoone/shared-contracts';
 
-export interface CustomerRecord {
-  id: string;
-  tenantId: string;
-  companyId: string;
-  type: "person" | "company";
-  document: string;
-  legalName: string;
-  status: "draft" | "active" | "blocked" | "inactive" | "archived";
-  creditLimit: number;
-  version: number;
-  createdAt: string;
-  createdBy: string;
-  updatedAt?: string;
-  updatedBy?: string;
-}
+export type BaseGovernanceListResult<T> = {
+  items: T[];
+  totalItems: number;
+  hasNextPage: boolean;
+  page: number;
+  pageSize: number;
+};
 
-export interface AuditRecord {
-  id: string;
-  tenantId: string;
-  actorUserId: string;
-  action: string;
-  resourceType: string;
-  resourceId: string;
-  diff: Record<string, unknown>;
-  correlationId: string;
-  createdAt: string;
-}
+export type ListRolesFilters = {
+  search?: string;
+  status?: BaseGovernanceRoleStatus;
+  page: number;
+  pageSize: number;
+};
+
+export type ListAuditFilters = {
+  entityType?: string;
+  entityId?: string;
+  page: number;
+  pageSize: number;
+};
+
+export type ListSettingsFilters = {
+  search?: string;
+  moduleKey?: string;
+  scopeType?: SettingScopeType;
+  sensitive?: boolean;
+  status?: ListSettingsQuery['status'];
+  page: number;
+  pageSize: number;
+};
 
 export interface BaseGovernanceRepository {
-  listRoles(tenantId: string): Promise<RoleRecord[]>;
-  getRole(tenantId: string, roleId: string): Promise<RoleRecord | null>;
-  saveRole(role: RoleRecord): Promise<RoleRecord>;
-
-  listCustomers(tenantId: string, companyId?: string): Promise<CustomerRecord[]>;
-  getCustomer(tenantId: string, customerId: string): Promise<CustomerRecord | null>;
-  saveCustomer(customer: CustomerRecord): Promise<CustomerRecord>;
-
-  appendAudit(record: AuditRecord): Promise<void>;
-  listAudit(tenantId: string, resourceType?: string, resourceId?: string): Promise<AuditRecord[]>;
+  listRoles(
+    tenantId: string,
+    filters: ListRolesFilters,
+  ): Promise<BaseGovernanceListResult<BaseGovernanceRole>>;
+  findRoleById(
+    tenantId: string,
+    roleId: string,
+  ): Promise<BaseGovernanceRole | null>;
+  findRoleByKey(
+    tenantId: string,
+    key: string,
+  ): Promise<BaseGovernanceRole | null>;
+  listRolesByKeys(
+    tenantId: string,
+    roleKeys: string[],
+  ): Promise<BaseGovernanceRole[]>;
+  createRole(role: BaseGovernanceRole): Promise<BaseGovernanceRole>;
+  updateRole(input: {
+    tenantId: string;
+    roleId: string;
+    expectedVersion: number;
+    role: BaseGovernanceRole;
+  }): Promise<BaseGovernanceRole>;
+  listSettings(
+    tenantId: string,
+    filters: ListSettingsFilters,
+  ): Promise<BaseGovernanceListResult<BaseGovernanceSetting>>;
+  findSetting(input: {
+    tenantId: string;
+    settingKey: string;
+    scopeType: SettingScopeType;
+    companyId?: string;
+    establishmentId?: string;
+  }): Promise<BaseGovernanceSetting | null>;
+  upsertSetting(input: {
+    tenantId: string;
+    settingKey: string;
+    scopeType: SettingScopeType;
+    companyId?: string;
+    establishmentId?: string;
+    expectedVersion: number;
+    setting: BaseGovernanceSetting;
+  }): Promise<BaseGovernanceSetting>;
+  listAudit(
+    tenantId: string,
+    filters: ListAuditFilters,
+  ): Promise<BaseGovernanceListResult<AuditEvent>>;
+  isReady(): Promise<boolean>;
 }

@@ -26,6 +26,10 @@ import {
 } from './middlewares/authentication.middleware.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { requestContextMiddleware } from './middlewares/request-context.middleware.js';
+import type { BaseGovernanceRepository } from './modules/base-governance/application/base-governance.repository.js';
+import { BaseGovernanceService } from './modules/base-governance/application/base-governance.service.js';
+import { FirestoreBaseGovernanceRepository } from './modules/base-governance/infrastructure/firestore-base-governance.repository.js';
+import { InMemoryBaseGovernanceRepository } from './modules/base-governance/infrastructure/in-memory-base-governance.repository.js';
 import type { GovernanceRepository } from './modules/governance/application/governance-repository.js';
 import { GovernanceService } from './modules/governance/application/governance-service.js';
 import { FirestoreGovernanceRepository } from './modules/governance/infrastructure/firestore-governance.repository.js';
@@ -71,14 +75,19 @@ export type AppDependencies = {
   authVerifier: AuthVerifier;
   userRepository: UserRepository;
   governanceRepository: GovernanceRepository;
+  baseGovernanceRepository: BaseGovernanceRepository;
   auditLogWriter: AuditLogWriter;
   idempotencyStore: IdempotencyStore;
   userService: UserService;
   governanceService: GovernanceService;
+  baseGovernanceService: BaseGovernanceService;
 };
 
 type DependencyOverrides = Partial<
-  Omit<AppDependencies, 'userService' | 'governanceService' | 'env'>
+  Omit<
+    AppDependencies,
+    'userService' | 'governanceService' | 'baseGovernanceService' | 'env'
+  >
 > & {
   env?: Partial<AppEnv>;
 };
@@ -142,12 +151,6 @@ export function createDependencies(
     (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
       ? new FirestoreUserRepository(firebaseClients.firestore)
       : new InMemoryUserRepository());
-  const governanceRepository =
-    overrides.governanceRepository ??
-    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
-      ? new FirestoreGovernanceRepository(firebaseClients.firestore)
-      : new InMemoryGovernanceRepository());
-
   const auditLogWriter =
     overrides.auditLogWriter ??
     (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
@@ -158,6 +161,20 @@ export function createDependencies(
     (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
       ? new FirestoreIdempotencyStore(firebaseClients.firestore)
       : new InMemoryIdempotencyStore());
+  const governanceRepository =
+    overrides.governanceRepository ??
+    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
+      ? new FirestoreGovernanceRepository(firebaseClients.firestore)
+      : new InMemoryGovernanceRepository());
+  const baseGovernanceRepository =
+    overrides.baseGovernanceRepository ??
+    (resolvedEnv.DATA_MODE === 'firebase' && firebaseClients
+      ? new FirestoreBaseGovernanceRepository(firebaseClients.firestore)
+      : new InMemoryBaseGovernanceRepository(
+          auditLogWriter instanceof InMemoryAuditLogWriter
+            ? auditLogWriter
+            : undefined,
+        ));
   const userService = new UserService(
     userRepository,
     idempotencyStore,
@@ -167,6 +184,11 @@ export function createDependencies(
     governanceRepository,
     idempotencyStore,
     auditLogWriter,
+    baseGovernanceRepository,
+  );
+  const baseGovernanceService = new BaseGovernanceService(
+    baseGovernanceRepository,
+    auditLogWriter,
   );
 
   return {
@@ -174,10 +196,12 @@ export function createDependencies(
     authVerifier,
     userRepository,
     governanceRepository,
+    baseGovernanceRepository,
     auditLogWriter,
     idempotencyStore,
     userService,
     governanceService,
+    baseGovernanceService,
   };
 }
 

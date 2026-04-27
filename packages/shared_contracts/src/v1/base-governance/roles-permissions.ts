@@ -1,5 +1,10 @@
-import { z } from "zod";
-import { auditMetadataSchema, baseGovernanceActionSchema, baseGovernanceModuleSchema, scopedAccessSchema } from "./common";
+import { z } from 'zod';
+import {
+  auditMetadataSchema,
+  baseGovernanceActionSchema,
+  baseGovernanceModuleSchema,
+  scopedAccessSchema,
+} from './common.js';
 
 export const permissionGrantSchema = z.object({
   module: baseGovernanceModuleSchema,

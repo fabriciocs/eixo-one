@@ -1,62 +1,112 @@
-import { describe, expect, it } from "vitest";
-import { BaseGovernanceService } from "../application/base-governance.service";
-import { InMemoryBaseGovernanceRepository } from "../infrastructure/in-memory-base-governance.repository";
+import { describe, expect, it } from 'vitest';
+
+import { InMemoryAuditLogWriter } from '../../../core/audit/audit-log-writer.js';
+import { BaseGovernanceService } from '../application/base-governance.service.js';
+import { InMemoryBaseGovernanceRepository } from '../infrastructure/in-memory-base-governance.repository.js';
 
 const admin = {
-  userId: "user_admin",
-  tenantId: "tenant_demo",
-  roleKeys: ["admin"],
-  permissionKeys: [
-    "governance.roles.read",
-    "governance.roles.manage",
-    "audit.read",
-    "customers.read",
-    "customers.create",
-    "customers.update",
-  ],
+  uid: 'user_admin',
+  tenantId: 'tenant_demo',
+  roleKeys: ['platform_admin'],
+  permissionKeys: ['roles.read', 'roles.manage', 'audit.read'],
+  moduleKeys: ['dashboard', 'governance', 'roles', 'audit'],
 };
 
-describe("BaseGovernanceService", () => {
-  it("creates roles with audit trail", async () => {
-    const service = new BaseGovernanceService(new InMemoryBaseGovernanceRepository());
-    const role = await service.createRole(admin, {
-      key: "finance.viewer",
-      name: "Financeiro leitura",
-      permissionKeys: ["customers.read"],
-      companyIds: ["company_1"],
-      establishmentIds: [],
-      status: "active",
-    }, "corr-test");
+const requestContext = {
+  correlationId: 'corr-1234567890',
+  requestId: 'req-1234567890',
+  receivedAt: '2026-04-27T00:00:00.000Z',
+};
 
-    const audit = await service.listAudit(admin, "role", role.id);
+describe('BaseGovernanceService', () => {
+  it('creates roles with audit trail', async () => {
+    const auditLogWriter = new InMemoryAuditLogWriter();
+    const service = new BaseGovernanceService(
+      new InMemoryBaseGovernanceRepository(auditLogWriter),
+      auditLogWriter,
+    );
+    const role = await service.createRole(
+      admin,
+      {
+        key: 'finance.viewer',
+        name: 'Financeiro leitura',
+        description: 'Consulta dados financeiros sem alterar cadastros.',
+        permissionKeys: ['governance.company.read'],
+        companyIds: ['cmp_demo'],
+        establishmentIds: [],
+        costCenterIds: [],
+        status: 'active',
+      },
+      requestContext,
+    );
+
+    const audit = await service.listAuditEvents(admin, {
+      entityType: 'role',
+      entityId: role.roleId,
+      page: 1,
+      pageSize: 20,
+    });
+
     expect(role.version).toBe(0);
-    expect(audit).toHaveLength(1);
+    expect(audit.items).toHaveLength(1);
   });
 
-  it("rejects customer without permission", async () => {
-    const service = new BaseGovernanceService(new InMemoryBaseGovernanceRepository());
-    await expect(service.createCustomer({ ...admin, permissionKeys: [] }, {
-      companyId: "company_1",
-      type: "person",
-      document: "12345678901",
-      legalName: "Cliente teste",
-      status: "active",
-      creditLimit: 0,
-    }, "corr-test")).rejects.toThrow("FORBIDDEN");
+  it('rejects unknown permission keys on role creation', async () => {
+    const auditLogWriter = new InMemoryAuditLogWriter();
+    const service = new BaseGovernanceService(
+      new InMemoryBaseGovernanceRepository(auditLogWriter),
+      auditLogWriter,
+    );
+
+    await expect(
+      service.createRole(
+        admin,
+        {
+          key: 'invalid.role',
+          name: 'Perfil invalido',
+          description: 'Usa permissao nao catalogada.',
+          permissionKeys: ['unknown.permission'],
+          companyIds: [],
+          establishmentIds: [],
+          costCenterIds: [],
+          status: 'draft',
+        },
+        requestContext,
+      ),
+    ).rejects.toThrow('Existem permissoes desconhecidas');
   });
 
-  it("validates customer document and optimistic concurrency", async () => {
-    const service = new BaseGovernanceService(new InMemoryBaseGovernanceRepository());
-    const customer = await service.createCustomer(admin, {
-      companyId: "company_1",
-      type: "person",
-      document: "123.456.789-01",
-      legalName: "Cliente teste",
-      status: "active",
-      creditLimit: 100,
-    }, "corr-test");
+  it('validates optimistic concurrency on role updates', async () => {
+    const auditLogWriter = new InMemoryAuditLogWriter();
+    const service = new BaseGovernanceService(
+      new InMemoryBaseGovernanceRepository(auditLogWriter),
+      auditLogWriter,
+    );
+    const role = await service.createRole(
+      admin,
+      {
+        key: 'ops.viewer',
+        name: 'Operacoes leitura',
+        description: 'Consulta operacoes basicas.',
+        permissionKeys: ['governance.establishment.read'],
+        companyIds: ['cmp_demo'],
+        establishmentIds: [],
+        costCenterIds: [],
+        status: 'active',
+      },
+      requestContext,
+    );
 
-    await expect(service.updateCustomer(admin, customer.id, 99, { creditLimit: 200 }, "corr-test"))
-      .rejects.toThrow("VERSION_CONFLICT");
+    await expect(
+      service.updateRole(
+        admin,
+        role.roleId,
+        {
+          expectedVersion: 99,
+          name: 'Operacoes leitura v2',
+        },
+        requestContext,
+      ),
+    ).rejects.toThrow('Versao do perfil desatualizada');
   });
 });

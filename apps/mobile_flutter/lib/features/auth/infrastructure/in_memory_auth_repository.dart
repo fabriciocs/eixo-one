@@ -70,6 +70,10 @@ class InMemoryAuthRepository implements AuthRepository {
         permissionKeys: const [
           'users.read',
           'users.manage',
+          'roles.read',
+          'roles.manage',
+          'settings.read',
+          'settings.manage',
           'audit.read',
           'governance.company.read',
           'governance.company.create',

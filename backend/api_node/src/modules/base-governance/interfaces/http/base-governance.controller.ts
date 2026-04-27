@@ -1,88 +1,158 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
-import { BaseGovernanceService } from "../../application/base-governance.service";
-import { InMemoryBaseGovernanceRepository } from "../../infrastructure/in-memory-base-governance.repository";
+import {
+  createRoleRequestSchema,
+  listAuditEventsQuerySchema,
+  listRolesQuerySchema,
+  listSettingsQuerySchema,
+  resetSettingRequestSchema,
+  roleIdSchema,
+  settingKeySchema,
+  updateRoleRequestSchema,
+  updateSettingRequestSchema,
+} from '@eixoone/shared-contracts';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 
-const repository = new InMemoryBaseGovernanceRepository();
-const service = new BaseGovernanceService(repository);
+import { sendSuccess } from '../../../../core/contracts/http-response.js';
+import type { AppDependencies } from '../../../../server.js';
 
-const roleBodySchema = z.object({
-  key: z.string().regex(/^[a-z0-9_.-]+$/),
-  name: z.string().min(3).max(120),
-  permissionKeys: z.array(z.string().min(1)).min(1),
-  companyIds: z.array(z.string()).default([]),
-  establishmentIds: z.array(z.string()).default([]),
-  status: z.enum(["draft", "active", "inactive"]).default("draft"),
+const roleIdParamsSchema = z.object({
+  roleId: roleIdSchema,
 });
 
-const customerBodySchema = z.object({
-  companyId: z.string().min(1),
-  type: z.enum(["person", "company"]),
-  document: z.string().min(11).max(18),
-  legalName: z.string().min(2).max(160),
-  status: z.enum(["draft", "active", "blocked", "inactive"]).default("draft"),
-  creditLimit: z.number().nonnegative().default(0),
+const settingKeyParamsSchema = z.object({
+  settingKey: settingKeySchema,
 });
 
-function subjectFromRequest(request: FastifyRequest) {
-  const auth = (request as any).auth;
-  if (!auth) throw new Error("UNAUTHENTICATED");
+export function createBaseGovernanceController(dependencies: AppDependencies) {
   return {
-    userId: auth.userId,
-    tenantId: auth.tenantId,
-    roleKeys: auth.roleKeys ?? [],
-    permissionKeys: auth.permissionKeys ?? [],
-    mfaVerified: auth.mfaVerified ?? false,
+    listRoles: async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = listRolesQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listRoles(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        {
+          items: result.items,
+        },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    createRole: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = createRoleRequestSchema.parse(request.body);
+      const role = await dependencies.baseGovernanceService.createRole(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, role);
+    },
+    updateRole: async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = roleIdParamsSchema.parse(request.params);
+      const body = updateRoleRequestSchema.parse(request.body);
+      const role = await dependencies.baseGovernanceService.updateRole(
+        request.auth!,
+        params.roleId,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, role);
+    },
+    listPermissionCatalog: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const permissions =
+        await dependencies.baseGovernanceService.listPermissionCatalog(
+          request.auth!,
+        );
+
+      return sendSuccess(request, reply, {
+        items: permissions,
+      });
+    },
+    listSettings: async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = listSettingsQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listSettings(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        {
+          items: result.items,
+        },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    updateSetting: async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = settingKeyParamsSchema.parse(request.params);
+      const body = updateSettingRequestSchema.parse(request.body);
+      const setting = await dependencies.baseGovernanceService.updateSetting(
+        request.auth!,
+        params.settingKey,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, setting);
+    },
+    resetSetting: async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = settingKeyParamsSchema.parse(request.params);
+      const body = resetSettingRequestSchema.parse(request.body);
+      const setting = await dependencies.baseGovernanceService.resetSetting(
+        request.auth!,
+        params.settingKey,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, setting);
+    },
+    listAuditEvents: async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = listAuditEventsQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listAuditEvents(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        {
+          items: result.items,
+        },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
   };
-}
-
-function correlationId(request: FastifyRequest): string {
-  return String(request.headers["x-correlation-id"] ?? crypto.randomUUID());
-}
-
-export async function registerBaseGovernanceRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/v1/base-governance/roles", async (request, reply) => {
-    const roles = await service.listRoles(subjectFromRequest(request));
-    return reply.send({ ok: true, data: roles });
-  });
-
-  app.post("/v1/base-governance/roles", async (request, reply) => {
-    const input = roleBodySchema.parse(request.body);
-    const role = await service.createRole(subjectFromRequest(request), input, correlationId(request));
-    return reply.code(201).send({ ok: true, data: role });
-  });
-
-  app.patch("/v1/base-governance/roles/:roleId", async (request, reply) => {
-    const params = z.object({ roleId: z.string().min(1) }).parse(request.params);
-    const body = roleBodySchema.partial().extend({ expectedVersion: z.number().int().nonnegative() }).parse(request.body);
-    const { expectedVersion, ...patch } = body;
-    const role = await service.updateRole(subjectFromRequest(request), params.roleId, expectedVersion, patch, correlationId(request));
-    return reply.send({ ok: true, data: role });
-  });
-
-  app.get("/v1/customers", async (request, reply) => {
-    const query = z.object({ companyId: z.string().optional() }).parse(request.query);
-    const customers = await service.listCustomers(subjectFromRequest(request), query.companyId);
-    return reply.send({ ok: true, data: customers });
-  });
-
-  app.post("/v1/customers", async (request, reply) => {
-    const input = customerBodySchema.parse(request.body);
-    const customer = await service.createCustomer(subjectFromRequest(request), input, correlationId(request));
-    return reply.code(201).send({ ok: true, data: customer });
-  });
-
-  app.patch("/v1/customers/:customerId", async (request, reply) => {
-    const params = z.object({ customerId: z.string().min(1) }).parse(request.params);
-    const body = customerBodySchema.partial().extend({ expectedVersion: z.number().int().nonnegative() }).parse(request.body);
-    const { expectedVersion, ...patch } = body;
-    const customer = await service.updateCustomer(subjectFromRequest(request), params.customerId, expectedVersion, patch, correlationId(request));
-    return reply.send({ ok: true, data: customer });
-  });
-
-  app.get("/v1/audit-trail", async (request, reply) => {
-    const query = z.object({ resourceType: z.string().optional(), resourceId: z.string().optional() }).parse(request.query);
-    const events = await service.listAudit(subjectFromRequest(request), query.resourceType, query.resourceId);
-    return reply.send({ ok: true, data: events });
-  });
 }

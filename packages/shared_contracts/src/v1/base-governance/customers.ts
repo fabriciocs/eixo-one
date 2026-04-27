@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { auditMetadataSchema } from "./common";
+import { z } from 'zod';
+import { auditMetadataSchema } from './common.js';
 
 const cpfCnpjRegex = /^(\d{11}|\d{14})$/;
 
