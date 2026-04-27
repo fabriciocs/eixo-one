@@ -96,45 +96,47 @@ jobs:
         run: |
           echo "EXTRACTED_SCRIPT=${{ runner.temp }}/extracted-bash-blocks.sh" >> "${GITHUB_ENV}"
 
-      # Lê a mensagem do último commit, detecta o primeiro .zip obrigatório
-      # e, opcionalmente, o primeiro .md para manter compatibilidade com o workflow anterior.
-      - name: Detect ZIP and Markdown files from last commit message
+      # Detecta arquivos .zip e .md criados ou alterados no último commit em docs/actions-exec/.
+      - name: Detect ZIP and Markdown files changed in docs/actions-exec
         id: detect_files
         shell: bash
         run: |
           set -euo pipefail
 
-          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+          CHANGED_ACTION_FILES="$(
+            git diff --name-status HEAD^ HEAD -- docs/actions-exec/ \
+              | awk '$1 == "A" || $1 == "M" { print $2 }' \
+              | tr '\\' '/' \
+              || true
+          )"
 
-          echo "Mensagem do último commit:"
+          echo "Arquivos criados ou alterados no último commit em docs/actions-exec/:"
           echo "--------------------------------------------------"
-          printf '%s\n' "${COMMIT_MESSAGE}"
+          if [[ -n "${CHANGED_ACTION_FILES}" ]]; then
+            printf '%s\n' "${CHANGED_ACTION_FILES}"
+          else
+            echo "Nenhum arquivo criado ou alterado."
+          fi
           echo "--------------------------------------------------"
 
-          NORMALIZED_COMMIT_MESSAGE="$(
-            printf '%s\n' "${COMMIT_MESSAGE}" | tr '\\' '/'
+          ZIP_FILES="$(
+            printf '%s\n' "${CHANGED_ACTION_FILES}" \
+              | grep -Ei '^docs/actions-exec/.+\.zip$' \
+              || true
           )"
 
-          ZIP_FILE="$(
-            printf '%s\n' "${NORMALIZED_COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.zip)'               | head -n 1 || true
+          MARKDOWN_FILES="$(
+            printf '%s\n' "${CHANGED_ACTION_FILES}" \
+              | grep -Ei '^docs/actions-exec/.+\.md$' \
+              || true
           )"
 
-          MARKDOWN_FILE="$(
-            printf '%s\n' "${NORMALIZED_COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
-          )"
-
-          if [[ -z "${ZIP_FILE}" ]]; then
-            if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-              echo "Nenhum arquivo .zip foi encontrado na mensagem do último commit. Encerrando sem processamento."
-              echo "should_process=false" >> "${GITHUB_OUTPUT}"
-              echo "markdown_file=" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-
-            echo "Erro: nenhum arquivo .zip foi encontrado na mensagem do último commit."
-            echo "Exemplo de mensagem válida:"
-            echo "feat: aplicar fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip"
-            exit 1
+          if [[ -z "${ZIP_FILES}" && -z "${MARKDOWN_FILES}" ]]; then
+            echo "Nenhum arquivo .zip ou .md criado/alterado em docs/actions-exec/. Encerrando sem processamento."
+            echo "should_process=false" >> "${GITHUB_OUTPUT}"
+            echo "has_zip_files=false" >> "${GITHUB_OUTPUT}"
+            echo "has_markdown_files=false" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
 
           validate_relative_path() {
@@ -149,37 +151,68 @@ jobs:
             esac
           }
 
-          validate_relative_path "${ZIP_FILE}" "caminho do ZIP"
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            validate_relative_path "${zip_file}" "caminho do ZIP"
 
-          if [[ ! -f "${ZIP_FILE}" ]]; then
-            echo "Erro: ZIP citado no último commit não foi encontrado no repositório: ${ZIP_FILE}"
-            echo "O caminho deve ser relativo à raiz do repositório."
-            exit 1
-          fi
-
-          if [[ -n "${MARKDOWN_FILE}" ]]; then
-            validate_relative_path "${MARKDOWN_FILE}" "caminho do Markdown"
-
-            if [[ ! -f "${MARKDOWN_FILE}" ]]; then
-              echo "Aviso: Markdown citado no commit não foi encontrado: ${MARKDOWN_FILE}"
-              echo "A etapa de extração de bash será ignorada."
-              MARKDOWN_FILE=""
+            if [[ ! -f "${zip_file}" ]]; then
+              echo "Erro: ZIP criado/alterado no último commit não foi encontrado no repositório: ${zip_file}"
+              exit 1
             fi
-          fi
+          done <<< "${ZIP_FILES}"
 
-          echo "ZIP detectado: ${ZIP_FILE}"
+          while IFS= read -r markdown_file; do
+            [[ -z "${markdown_file}" ]] && continue
+            validate_relative_path "${markdown_file}" "caminho do Markdown"
 
-          if [[ -n "${MARKDOWN_FILE}" ]]; then
-            echo "Markdown detectado: ${MARKDOWN_FILE}"
+            if [[ ! -f "${markdown_file}" ]]; then
+              echo "Erro: Markdown criado/alterado no último commit não foi encontrado no repositório: ${markdown_file}"
+              exit 1
+            fi
+          done <<< "${MARKDOWN_FILES}"
+
+          echo "ZIPs detectados:"
+          if [[ -n "${ZIP_FILES}" ]]; then
+            printf '%s\n' "${ZIP_FILES}"
           else
-            echo "Nenhum Markdown válido detectado. Apenas o ZIP será processado."
+            echo "Nenhum."
           fi
 
-          echo "should_process=true" >> "${GITHUB_OUTPUT}"
-          echo "zip_file=${ZIP_FILE}" >> "${GITHUB_OUTPUT}"
-          echo "markdown_file=${MARKDOWN_FILE}" >> "${GITHUB_OUTPUT}"
-          echo "ZIP_FILE=${ZIP_FILE}" >> "${GITHUB_ENV}"
-          echo "MARKDOWN_FILE=${MARKDOWN_FILE}" >> "${GITHUB_ENV}"
+          echo "Markdowns detectados:"
+          if [[ -n "${MARKDOWN_FILES}" ]]; then
+            printf '%s\n' "${MARKDOWN_FILES}"
+          else
+            echo "Nenhum."
+          fi
+
+          {
+            echo "should_process=true"
+            if [[ -n "${ZIP_FILES}" ]]; then
+              echo "has_zip_files=true"
+            else
+              echo "has_zip_files=false"
+            fi
+            if [[ -n "${MARKDOWN_FILES}" ]]; then
+              echo "has_markdown_files=true"
+            else
+              echo "has_markdown_files=false"
+            fi
+            echo "zip_files<<EOF"
+            printf '%s\n' "${ZIP_FILES}"
+            echo "EOF"
+            echo "markdown_files<<EOF"
+            printf '%s\n' "${MARKDOWN_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "ZIP_FILES<<EOF"
+            printf '%s\n' "${ZIP_FILES}"
+            echo "EOF"
+            echo "MARKDOWN_FILES<<EOF"
+            printf '%s\n' "${MARKDOWN_FILES}"
+            echo "EOF"
+          } >> "${GITHUB_ENV}"
 
       # Valida o diretório de extração para evitar escrita fora do workspace.
       - name: Validate extraction destination
@@ -205,109 +238,125 @@ jobs:
 
       # Testa a integridade do ZIP antes de listar ou extrair.
       - name: Test ZIP integrity
-        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_zip_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          unzip -t "${ZIP_FILE}"
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            unzip -t "${zip_file}"
+          done <<< "${ZIP_FILES}"
 
       # Lista o conteúdo do ZIP para auditoria no log.
       - name: List ZIP contents
-        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_zip_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Conteúdo do ZIP: ${ZIP_FILE}"
-          echo "=================================================="
-          unzip -l "${ZIP_FILE}"
-          echo "=================================================="
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            echo "Conteúdo do ZIP: ${zip_file}"
+            echo "=================================================="
+            unzip -l "${zip_file}"
+            echo "=================================================="
+          done <<< "${ZIP_FILES}"
 
       # Proteção contra Zip Slip: bloqueia caminhos absolutos ou traversal dentro do ZIP.
       - name: Validate ZIP internal paths
-        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_zip_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          INVALID_PATHS="$(
-            zipinfo -1 "${ZIP_FILE}"               | awk '
-                  $0 ~ /^\// { print; next }
-                  $0 ~ /(^|\/)\.\.($|\/)/ { print; next }
-                ' || true
-          )"
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            INVALID_PATHS="$(
+              zipinfo -1 "${zip_file}"               | awk '
+                    $0 ~ /^\// { print; next }
+                    $0 ~ /(^|\/)\.\.($|\/)/ { print; next }
+                  ' || true
+            )"
 
-          if [[ -n "${INVALID_PATHS}" ]]; then
-            echo "Erro: o ZIP contém caminhos internos inseguros:"
-            printf '%s\n' "${INVALID_PATHS}"
-            exit 1
-          fi
+            if [[ -n "${INVALID_PATHS}" ]]; then
+              echo "Erro: o ZIP contém caminhos internos inseguros: ${zip_file}"
+              printf '%s\n' "${INVALID_PATHS}"
+              exit 1
+            fi
+          done <<< "${ZIP_FILES}"
 
-          echo "Caminhos internos do ZIP validados com sucesso."
+          echo "Caminhos internos dos ZIPs validados com sucesso."
 
       # O pacote deve trazer codigo-fonte/ como raiz lógica para aplicar no repositório.
       - name: Validate source root inside ZIP
-        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_zip_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! zipinfo -1 "${ZIP_FILE}" | grep -Eq '^codigo-fonte/[^/].*'; then
-            echo "Erro: o ZIP precisa conter arquivos dentro de codigo-fonte/."
-            exit 1
-          fi
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            if ! zipinfo -1 "${zip_file}" | grep -Eq '^codigo-fonte/[^/].*'; then
+              echo "Erro: o ZIP precisa conter arquivos dentro de codigo-fonte/: ${zip_file}"
+              exit 1
+            fi
+          done <<< "${ZIP_FILES}"
 
-          echo "Raiz codigo-fonte/ encontrada no ZIP."
+          echo "Raiz codigo-fonte/ encontrada nos ZIPs."
 
-      # Mantém a melhoria anterior: se a mensagem do commit citar um .md,
-      # extrai somente blocos delimitados por ```bash e ```.
+      # Extrai blocos delimitados por ```bash e ``` dos Markdowns detectados.
       - name: Extract bash blocks from Markdown
         id: extract_bash
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_markdown_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          awk '
-            BEGIN {
-              in_bash_block = 0
-              bash_block_count = 0
-            }
+          : > "${EXTRACTED_SCRIPT}"
 
-            /^```bash[[:space:]]*$/ {
-              in_bash_block = 1
-              bash_block_count++
-              print ""
-              print "# ---- bash block " bash_block_count " from " ENVIRON["MARKDOWN_FILE"] " ----"
-              next
-            }
-
-            /^```[[:space:]]*$/ {
-              if (in_bash_block == 1) {
+          while IFS= read -r markdown_file; do
+            [[ -z "${markdown_file}" ]] && continue
+            MARKDOWN_FILE="${markdown_file}" awk '
+              BEGIN {
                 in_bash_block = 0
+                bash_block_count = 0
+              }
+
+              /^```bash[[:space:]]*$/ {
+                in_bash_block = 1
+                bash_block_count++
                 print ""
-              }
-              next
-            }
-
-            {
-              if (in_bash_block == 1) {
-                print
-              }
-            }
-
-            END {
-              if (in_bash_block == 1) {
-                print "Erro: existe um bloco ```bash sem fechamento com ```." > "/dev/stderr"
-                exit 2
+                print "# ---- bash block " bash_block_count " from " ENVIRON["MARKDOWN_FILE"] " ----"
+                next
               }
 
-              if (bash_block_count == 0) {
-                print "Aviso: nenhum bloco ```bash foi encontrado no Markdown." > "/dev/stderr"
+              /^```[[:space:]]*$/ {
+                if (in_bash_block == 1) {
+                  in_bash_block = 0
+                  print ""
+                }
+                next
               }
-            }
-          ' "${MARKDOWN_FILE}" > "${EXTRACTED_SCRIPT}"
+
+              {
+                if (in_bash_block == 1) {
+                  print
+                }
+              }
+
+              END {
+                if (in_bash_block == 1) {
+                  print "Erro: existe um bloco ```bash sem fechamento com ``` em " ENVIRON["MARKDOWN_FILE"] "." > "/dev/stderr"
+                  exit 2
+                }
+
+                if (bash_block_count == 0) {
+                  print "Aviso: nenhum bloco ```bash foi encontrado em " ENVIRON["MARKDOWN_FILE"] "." > "/dev/stderr"
+                }
+              }
+            ' "${markdown_file}" >> "${EXTRACTED_SCRIPT}"
+          done <<< "${MARKDOWN_FILES}"
 
           chmod 700 "${EXTRACTED_SCRIPT}"
 
@@ -320,22 +369,23 @@ jobs:
 
       # Exibe os comandos extraídos do Markdown, quando houver.
       - name: Show extracted bash commands
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_markdown_files == 'true' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Arquivo Markdown usado: ${MARKDOWN_FILE}"
+          echo "Arquivos Markdown usados:"
+          printf '%s\n' "${MARKDOWN_FILES}"
           echo "Comandos bash extraídos:"
           echo "=================================================="
           cat "${EXTRACTED_SCRIPT}"
           echo "=================================================="
 
-      - name: Report no ZIP reference on push
+      - name: Report no action files changed on push
         if: ${{ steps.detect_files.outputs.should_process != 'true' }}
         shell: bash
         run: |
-          echo "Nenhum .zip foi referenciado na mensagem do último commit."
+          echo "Nenhum .zip ou .md foi criado/alterado em docs/actions-exec/ no último commit."
           echo "O workflow foi disparado por push na main e encerrou sem alterações."
 
       # Quando dry_run estiver ativo, apenas valida e mostra o que seria feito.
@@ -344,11 +394,16 @@ jobs:
         shell: bash
         run: |
           echo "Dry run ativado."
-          echo "ZIP detectado e validado: ${ZIP_FILE}"
           echo "Destino que seria usado: ${EXTRACT_DESTINATION}"
 
-          if [[ -n "${MARKDOWN_FILE}" ]]; then
-            echo "Markdown detectado: ${MARKDOWN_FILE}"
+          if [[ -n "${ZIP_FILES}" ]]; then
+            echo "ZIPs detectados:"
+            printf '%s\n' "${ZIP_FILES}"
+          fi
+
+          if [[ -n "${MARKDOWN_FILES}" ]]; then
+            echo "Markdowns detectados:"
+            printf '%s\n' "${MARKDOWN_FILES}"
             echo "execute_bash_from_markdown=${EXECUTE_BASH_FROM_MARKDOWN}"
           fi
 
@@ -356,7 +411,7 @@ jobs:
 
       # Extrai o ZIP apenas quando dry_run = false.
       - name: Extract ZIP contents
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_zip_files == 'true' && steps.resolve_options.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -364,20 +419,25 @@ jobs:
           TEMP_EXTRACT_DIR="$(mktemp -d)"
           trap 'rm -rf "${TEMP_EXTRACT_DIR}"' EXIT
 
-          unzip -q "${ZIP_FILE}" -d "${TEMP_EXTRACT_DIR}"
-          mkdir -p "${EXTRACT_DESTINATION}"
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            ZIP_EXTRACT_DIR="${TEMP_EXTRACT_DIR}/$(basename "${zip_file}" .zip)"
+            mkdir -p "${ZIP_EXTRACT_DIR}"
+            unzip -q "${zip_file}" -d "${ZIP_EXTRACT_DIR}"
+            mkdir -p "${EXTRACT_DESTINATION}"
 
-          shopt -s dotglob nullglob
-          cp -R "${TEMP_EXTRACT_DIR}/codigo-fonte/"* "${EXTRACT_DESTINATION}/"
+            shopt -s dotglob nullglob
+            cp -R "${ZIP_EXTRACT_DIR}/codigo-fonte/"* "${EXTRACT_DESTINATION}/"
 
-          echo "ZIP extraído com sucesso."
-          echo "ZIP: ${ZIP_FILE}"
-          echo "Origem aplicada: codigo-fonte/"
-          echo "Destino: ${EXTRACT_DESTINATION}"
+            echo "ZIP extraído com sucesso."
+            echo "ZIP: ${zip_file}"
+            echo "Origem aplicada: codigo-fonte/"
+            echo "Destino: ${EXTRACT_DESTINATION}"
+          done <<< "${ZIP_FILES}"
 
       # Executa os blocos bash do Markdown apenas quando essa opção estiver habilitada.
       - name: Execute extracted bash commands from Markdown
-        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.execute_bash_from_markdown == 'true' && steps.detect_files.outputs.markdown_file != '' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.execute_bash_from_markdown == 'true' && steps.detect_files.outputs.has_markdown_files == 'true' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -410,11 +470,29 @@ jobs:
 
           git add "${EXTRACT_DESTINATION}"
 
-          if [[ -n "${MARKDOWN_FILE}" ]]; then
-            git add "${MARKDOWN_FILE}" || true
-          fi
+          while IFS= read -r markdown_file; do
+            [[ -z "${markdown_file}" ]] && continue
+            git add "${markdown_file}" || true
+          done <<< "${MARKDOWN_FILES}"
 
-          git commit -m "${COMMIT_MESSAGE_PREFIX}: ${ZIP_FILE}"
+          while IFS= read -r zip_file; do
+            [[ -z "${zip_file}" ]] && continue
+            git add "${zip_file}" || true
+          done <<< "${ZIP_FILES}"
+
+          COMMIT_MESSAGE_FILE="$(mktemp)"
+          {
+            echo "${COMMIT_MESSAGE_PREFIX}"
+            echo ""
+            if [[ -n "${MARKDOWN_FILES}" ]]; then
+              printf '%s\n' "${MARKDOWN_FILES}"
+            fi
+            if [[ -n "${ZIP_FILES}" ]]; then
+              printf '%s\n' "${ZIP_FILES}"
+            fi
+          } > "${COMMIT_MESSAGE_FILE}"
+
+          git commit -F "${COMMIT_MESSAGE_FILE}"
           git push
 
       # Mensagem final quando o commit automático não foi ativado.
