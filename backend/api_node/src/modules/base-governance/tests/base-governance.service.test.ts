@@ -109,4 +109,50 @@ describe('BaseGovernanceService', () => {
       ),
     ).rejects.toThrow('Versao do perfil desatualizada');
   });
+
+  it('marks test recipients containing fail as failed before retrying', async () => {
+    const auditLogWriter = new InMemoryAuditLogWriter();
+    const service = new BaseGovernanceService(
+      new InMemoryBaseGovernanceRepository(auditLogWriter),
+      auditLogWriter,
+    );
+
+    const template = await service.createNotificationTemplate(
+      admin,
+      {
+        key: 'notifications.manual.followup.email',
+        moduleKey: 'notifications',
+        label: 'Follow-up manual',
+        channel: 'email',
+        eventKey: 'manual.followup',
+        subject: 'Pendencia em aberto',
+        body: 'Ola {{customerName}}, existe uma pendencia para {{documentCode}}.',
+        scopeType: 'TENANT',
+        requiresConsent: true,
+        allowAttachments: false,
+        retryLimit: 2,
+        status: 'active',
+      },
+      requestContext,
+    );
+
+    const delivery = await service.sendNotification(
+      admin,
+      {
+        templateKey: template.key,
+        recipient: 'fail@cliente.com',
+        bodyVariables: {
+          customerName: 'Cliente Demo',
+          documentCode: 'DOC-102',
+        },
+        consentGranted: true,
+        attachments: [],
+        metadata: {},
+      },
+      requestContext,
+    );
+
+    expect(delivery.status).toBe('failed');
+    expect(delivery.lastError).toContain('Falha simulada');
+  });
 });

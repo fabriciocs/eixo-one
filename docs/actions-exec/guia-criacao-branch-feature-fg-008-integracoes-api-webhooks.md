@@ -28,15 +28,15 @@ git push
 
 ## Inputs principais
 
-- `dry_run`: por padrão `true`. Valida e lista tudo, mas não extrai nem executa comandos.
+- `dry_run`: por padrão `false`. Aplica o fluxo completo; ative `true` quando quiser apenas validar e listar tudo antes.
 - `extract_destination`: destino da extração, relativo à raiz do repositório.
-- `execute_bash_from_markdown`: por padrão `false`. Executa blocos `bash` do Markdown somente quando ativado.
-- `commit_extracted_files`: por padrão `false`. Cria commit e push somente quando ativado.
+- `execute_bash_from_markdown`: por padrão `true`. Executa os blocos `bash` do Markdown quando um `.md` válido for detectado no commit.
+- `commit_extracted_files`: por padrão `true`. Cria commit e push automaticamente quando houver alterações.
 - `commit_message_prefix`: prefixo do commit automático.
 
 ## Segurança
 
-Use primeiro com `dry_run = true`.
+Se quiser uma rodada de inspeção antes de aplicar mudanças, execute primeiro com `dry_run = true`.
 
 O workflow valida:
 
@@ -47,4 +47,4 @@ O workflow valida:
 - caminhos internos do ZIP para reduzir risco de Zip Slip;
 - destino de extração relativo ao workspace.
 
-Por segurança, blocos `bash` do Markdown não são executados por padrão.
+Em cenários mais sensíveis, prefira uma primeira execução com `dry_run = true` para revisar o ZIP e os comandos antes da aplicação real.

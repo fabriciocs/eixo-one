@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Quando true, apenas detecta, valida e exibe o que seria feito"
+        description: "Quando true, apenas detecta, valida e exibe o que seria feito sem alterar o repositório"
         required: true
-        default: true
+        default: false
         type: boolean
       extract_destination:
         description: "Diretório de destino para extrair o ZIP, relativo à raiz do repositório"
@@ -16,17 +16,17 @@ on:
       execute_bash_from_markdown:
         description: "Quando true, executa blocos bash do .md citado no último commit"
         required: true
-        default: false
+        default: true
         type: boolean
       commit_extracted_files:
         description: "Quando true, cria commit e push dos arquivos extraídos/alterados"
         required: true
-        default: false
+        default: true
         type: boolean
       commit_message_prefix:
         description: "Prefixo da mensagem do commit automático"
         required: true
-        default: "chore: extract source zip"
+        default: "chore(actions): apply extracted source zip"
         type: string
 
 permissions:

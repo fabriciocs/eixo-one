@@ -604,10 +604,7 @@ export class BaseGovernanceService {
       return 'suppressed';
     }
 
-    if (
-      input.template.channel === 'webhook' &&
-      input.recipient.includes('fail')
-    ) {
+    if (input.recipient.toLowerCase().includes('fail')) {
       return 'failed';
     }
 
