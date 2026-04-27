@@ -1,39 +1,61 @@
-name: Run Bash Blocks From Markdown From Last Commit Message
+name: Extract Source ZIP And Optional Bash From Last Commit
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Quando true, apenas extrai e exibe os comandos, sem executar"
+        description: "Quando true, apenas detecta, valida e exibe o que seria feito"
         required: true
         default: true
         type: boolean
+      extract_destination:
+        description: "Diretório de destino para extrair o ZIP, relativo à raiz do repositório"
+        required: true
+        default: "."
+        type: string
+      execute_bash_from_markdown:
+        description: "Quando true, executa blocos bash do .md citado no último commit"
+        required: true
+        default: false
+        type: boolean
+      commit_extracted_files:
+        description: "Quando true, cria commit e push dos arquivos extraídos/alterados"
+        required: true
+        default: false
+        type: boolean
+      commit_message_prefix:
+        description: "Prefixo da mensagem do commit automático"
+        required: true
+        default: "chore: extract source zip"
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  run-bash-blocks-from-last-commit-md:
-    name: Extract and run bash blocks from Markdown named in last commit
+  extract-source-zip-and-optional-bash:
+    name: Detect ZIP, extract source files and optionally run Markdown bash
     runs-on: ubuntu-latest
 
     env:
-      EXTRACTED_SCRIPT: ${{ github.workspace }}/extracted-bash-blocks.sh
+      EXTRACT_DESTINATION: ${{ inputs.extract_destination }}
 
     steps:
-      # Faz checkout do repositório para permitir leitura do último commit e dos arquivos versionados.
+      # Faz checkout do repositório para ler o último commit e acessar arquivos versionados.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      # Lê a mensagem do último commit e extrai o primeiro arquivo/caminho terminado em .md.
-      # Exemplo de mensagem aceita:
-      #   docs: adiciona guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
-      #   feat: executa docs/setup.md
-      #   arquivo: `guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md`
-      - name: Detect Markdown file from last commit message
-        id: detect_markdown
+      - name: Set extracted script path
+        shell: bash
+        run: |
+          echo "EXTRACTED_SCRIPT=${{ runner.temp }}/extracted-bash-blocks.sh" >> "${GITHUB_ENV}"
+
+      # Lê a mensagem do último commit, detecta o primeiro .zip obrigatório
+      # e, opcionalmente, o primeiro .md para manter compatibilidade com o workflow anterior.
+      - name: Detect ZIP and Markdown files from last commit message
+        id: detect_files
         shell: bash
         run: |
           set -euo pipefail
@@ -45,37 +67,129 @@ jobs:
           printf '%s\n' "${COMMIT_MESSAGE}"
           echo "--------------------------------------------------"
 
-          MARKDOWN_FILE="$(
-            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eo '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
+          ZIP_FILE="$(
+            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.zip)'               | head -n 1 || true
           )"
 
-          if [[ -z "${MARKDOWN_FILE}" ]]; then
-            echo "Erro: nenhum arquivo .md foi encontrado na mensagem do último commit."
-            echo "Inclua o nome do arquivo Markdown na mensagem do commit, por exemplo:"
-            echo "docs: adiciona guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md"
+          MARKDOWN_FILE="$(
+            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
+          )"
+
+          if [[ -z "${ZIP_FILE}" ]]; then
+            echo "Erro: nenhum arquivo .zip foi encontrado na mensagem do último commit."
+            echo "Exemplo de mensagem válida:"
+            echo "feat: aplicar fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip"
             exit 1
           fi
 
-          case "${MARKDOWN_FILE}" in
+          validate_relative_path() {
+            local path_value="$1"
+            local label="$2"
+
+            case "${path_value}" in
+              /*|../*|*"/../"*|*".."*)
+                echo "Erro: ${label} inválido ou potencialmente inseguro: ${path_value}"
+                exit 1
+                ;;
+            esac
+          }
+
+          validate_relative_path "${ZIP_FILE}" "caminho do ZIP"
+
+          if [[ ! -f "${ZIP_FILE}" ]]; then
+            echo "Erro: ZIP citado no último commit não foi encontrado no repositório: ${ZIP_FILE}"
+            echo "O caminho deve ser relativo à raiz do repositório."
+            exit 1
+          fi
+
+          if [[ -n "${MARKDOWN_FILE}" ]]; then
+            validate_relative_path "${MARKDOWN_FILE}" "caminho do Markdown"
+
+            if [[ ! -f "${MARKDOWN_FILE}" ]]; then
+              echo "Aviso: Markdown citado no commit não foi encontrado: ${MARKDOWN_FILE}"
+              echo "A etapa de extração de bash será ignorada."
+              MARKDOWN_FILE=""
+            fi
+          fi
+
+          echo "ZIP detectado: ${ZIP_FILE}"
+
+          if [[ -n "${MARKDOWN_FILE}" ]]; then
+            echo "Markdown detectado: ${MARKDOWN_FILE}"
+          else
+            echo "Nenhum Markdown válido detectado. Apenas o ZIP será processado."
+          fi
+
+          echo "zip_file=${ZIP_FILE}" >> "${GITHUB_OUTPUT}"
+          echo "markdown_file=${MARKDOWN_FILE}" >> "${GITHUB_OUTPUT}"
+          echo "ZIP_FILE=${ZIP_FILE}" >> "${GITHUB_ENV}"
+          echo "MARKDOWN_FILE=${MARKDOWN_FILE}" >> "${GITHUB_ENV}"
+
+      # Valida o diretório de extração para evitar escrita fora do workspace.
+      - name: Validate extraction destination
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${EXTRACT_DESTINATION}" ]]; then
+            echo "Erro: extract_destination não pode ser vazio."
+            exit 1
+          fi
+
+          case "${EXTRACT_DESTINATION}" in
             /*|../*|*"/../"*|*".."*)
-              echo "Erro: caminho Markdown inválido ou potencialmente inseguro: ${MARKDOWN_FILE}"
+              echo "Erro: destino inválido ou potencialmente inseguro: ${EXTRACT_DESTINATION}"
               exit 1
               ;;
           esac
 
-          if [[ ! -f "${MARKDOWN_FILE}" ]]; then
-            echo "Erro: arquivo Markdown citado no último commit não foi encontrado no repositório: ${MARKDOWN_FILE}"
-            echo "Verifique se o caminho informado na mensagem do commit é relativo à raiz do repositório."
+          mkdir -p "${EXTRACT_DESTINATION}"
+          echo "Destino de extração validado: ${EXTRACT_DESTINATION}"
+
+      # Testa a integridade do ZIP antes de listar ou extrair.
+      - name: Test ZIP integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          unzip -t "${ZIP_FILE}"
+
+      # Lista o conteúdo do ZIP para auditoria no log.
+      - name: List ZIP contents
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Conteúdo do ZIP: ${ZIP_FILE}"
+          echo "=================================================="
+          unzip -l "${ZIP_FILE}"
+          echo "=================================================="
+
+      # Proteção contra Zip Slip: bloqueia caminhos absolutos ou traversal dentro do ZIP.
+      - name: Validate ZIP internal paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INVALID_PATHS="$(
+            zipinfo -1 "${ZIP_FILE}"               | awk '
+                  $0 ~ /^\// { print; next }
+                  $0 ~ /(^|\/)\.\.($|\/)/ { print; next }
+                ' || true
+          )"
+
+          if [[ -n "${INVALID_PATHS}" ]]; then
+            echo "Erro: o ZIP contém caminhos internos inseguros:"
+            printf '%s\n' "${INVALID_PATHS}"
             exit 1
           fi
 
-          echo "Arquivo Markdown detectado: ${MARKDOWN_FILE}"
-          echo "markdown_file=${MARKDOWN_FILE}" >> "${GITHUB_OUTPUT}"
-          echo "MARKDOWN_FILE=${MARKDOWN_FILE}" >> "${GITHUB_ENV}"
+          echo "Caminhos internos do ZIP validados com sucesso."
 
-      # Extrai somente blocos iniciados por ```bash e encerrados por ```.
-      # Blocos ```text, ```markdown, ```json, ```yaml, ```python etc. são ignorados.
-      - name: Extract bash code blocks
+      # Mantém a melhoria anterior: se a mensagem do commit citar um .md,
+      # extrai somente blocos delimitados por ```bash e ```.
+      - name: Extract bash blocks from Markdown
+        if: ${{ steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -115,39 +229,106 @@ jobs:
               }
 
               if (bash_block_count == 0) {
-                print "Erro: nenhum bloco ```bash foi encontrado no arquivo Markdown." > "/dev/stderr"
-                exit 3
+                print "Aviso: nenhum bloco ```bash foi encontrado no Markdown." > "/dev/stderr"
               }
             }
           ' "${MARKDOWN_FILE}" > "${EXTRACTED_SCRIPT}"
 
           chmod 700 "${EXTRACTED_SCRIPT}"
 
-      # Exibe o script extraído antes da execução para auditoria.
-      - name: Show extracted commands
+      # Exibe os comandos extraídos do Markdown, quando houver.
+      - name: Show extracted bash commands
+        if: ${{ steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
           set -euo pipefail
 
           echo "Arquivo Markdown usado: ${MARKDOWN_FILE}"
-          echo "Comandos Bash extraídos:"
+          echo "Comandos bash extraídos:"
           echo "=================================================="
           cat "${EXTRACTED_SCRIPT}"
           echo "=================================================="
 
-      # No modo dry_run, o workflow para aqui com sucesso.
-      - name: Stop before execution in dry run mode
+      # Modo seguro padrão: valida, lista e mostra o que seria feito, mas não extrai nem executa.
+      - name: Stop in dry run mode
         if: ${{ inputs.dry_run == true }}
         shell: bash
         run: |
-          echo "Dry run ativado. Os comandos foram extraídos e exibidos, mas não foram executados."
+          echo "Dry run ativado."
+          echo "ZIP detectado e validado: ${ZIP_FILE}"
+          echo "Destino que seria usado: ${EXTRACT_DESTINATION}"
 
-      # Executa os comandos extraídos.
-      # bash -euo pipefail faz o job falhar se algum comando falhar.
-      - name: Execute extracted bash commands
+          if [[ -n "${MARKDOWN_FILE}" ]]; then
+            echo "Markdown detectado: ${MARKDOWN_FILE}"
+            echo "execute_bash_from_markdown=${{ inputs.execute_bash_from_markdown }}"
+          fi
+
+          echo "Nenhum arquivo foi extraído e nenhum comando bash foi executado."
+
+      # Extrai o ZIP apenas quando dry_run = false.
+      - name: Extract ZIP contents
         if: ${{ inputs.dry_run == false }}
         shell: bash
         run: |
           set -euo pipefail
 
+          unzip -o "${ZIP_FILE}" -d "${EXTRACT_DESTINATION}"
+
+          echo "ZIP extraído com sucesso."
+          echo "ZIP: ${ZIP_FILE}"
+          echo "Destino: ${EXTRACT_DESTINATION}"
+
+      # Execução opcional dos blocos bash do Markdown, desativada por padrão por segurança.
+      - name: Execute extracted bash commands from Markdown
+        if: ${{ inputs.dry_run == false && inputs.execute_bash_from_markdown == true && steps.detect_files.outputs.markdown_file != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -s "${EXTRACTED_SCRIPT}" ]]; then
+            echo "Nenhum comando bash extraído para executar."
+            exit 0
+          fi
+
           bash -euo pipefail "${EXTRACTED_SCRIPT}"
+
+      # Mostra alterações após extração e/ou execução opcional.
+      - name: Show repository changes
+        if: ${{ inputs.dry_run == false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git status --short
+
+      # Commit automático opcional.
+      - name: Commit and push changes
+        if: ${{ inputs.dry_run == false && inputs.commit_extracted_files == true }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$(git status --short)" ]]; then
+            echo "Nenhuma alteração para commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "${EXTRACT_DESTINATION}"
+
+          if [[ -n "${MARKDOWN_FILE}" ]]; then
+            git add "${MARKDOWN_FILE}" || true
+          fi
+
+          git commit -m "${{ inputs.commit_message_prefix }}: ${ZIP_FILE}"
+          git push
+
+      # Mensagem final quando o commit automático não foi ativado.
+      - name: Report manual commit required
+        if: ${{ inputs.dry_run == false && inputs.commit_extracted_files == false }}
+        shell: bash
+        run: |
+          echo "Processamento concluído sem commit automático."
+          echo "Revise as alterações no log do job antes de versionar manualmente."
