@@ -40,6 +40,7 @@ import type {
   AuthContext,
   RequestContextData,
 } from '../../../middlewares/request-types.js';
+import type { BaseGovernanceRepository } from '../../base-governance/application/base-governance.repository.js';
 import {
   resolveConsolidationRunTransition,
   resolveGovernanceStatusTransition,
@@ -97,6 +98,10 @@ export class GovernanceService {
     private readonly repository: GovernanceRepository,
     private readonly idempotencyStore: IdempotencyStore,
     private readonly auditLogWriter: AuditLogWriter,
+    private readonly baseGovernanceRepository?: Pick<
+      BaseGovernanceRepository,
+      'listRolesByKeys'
+    >,
   ) {}
 
   private isPlatformAdmin(auth: AuthContext) {
@@ -1048,6 +1053,48 @@ export class GovernanceService {
     const currentGrant =
       (await this.repository.findUserScopeGrant(auth.tenantId, targetUserId)) ??
       this.createEmptyGrant(auth.tenantId, targetUserId);
+
+    if (
+      auth.uid === targetUserId &&
+      !this.isPlatformAdmin(auth) &&
+      (JSON.stringify(currentGrant.roleKeys) !== JSON.stringify(payload.roleKeys) ||
+        JSON.stringify(currentGrant.permissionOverrides) !==
+          JSON.stringify(payload.permissionOverrides))
+    ) {
+      throw new AppError(
+        403,
+        'FORBIDDEN',
+        'Autoelevacao de papeis ou permissoes nao e permitida.',
+      );
+    }
+
+    if (this.baseGovernanceRepository && payload.roleKeys.length > 0) {
+      const catalogRoles = await this.baseGovernanceRepository.listRolesByKeys(
+        auth.tenantId,
+        payload.roleKeys,
+      );
+      const activeRoleKeys = new Set(
+        catalogRoles
+          .filter((role) => role.status === 'active')
+          .map((role) => role.key),
+      );
+      const missingRoleKeys = payload.roleKeys.filter(
+        (roleKey) => !activeRoleKeys.has(roleKey),
+      );
+
+      if (missingRoleKeys.length > 0) {
+        throw new AppError(
+          400,
+          'VALIDATION_ERROR',
+          'Todos os papeis atribuiveis precisam existir e estar ativos.',
+          missingRoleKeys.map((roleKey) => ({
+            field: 'roleKeys',
+            message: `Perfil indisponivel: ${roleKey}.`,
+          })),
+        );
+      }
+    }
+
     const now = new Date().toISOString();
 
     const updatedGrant = await this.repository.saveUserScopeGrant(

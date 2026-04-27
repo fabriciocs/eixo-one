@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createRoleRequestSchema,
   consolidatedOverviewSchema,
   changeUserStatusCommandSchema,
   createConsolidationRunRequestSchema,
   createEstablishmentRequestSchema,
+  updateSettingRequestSchema,
+  permissionCatalogEntrySchema,
   createSharingPolicyRequestSchema,
   createCompanyRequestSchema,
   contractVersion,
@@ -183,5 +186,48 @@ describe('shared contracts', () => {
     expect(run.participantCompanyIds).toHaveLength(2);
     expect(policy.shareMode).toBe('SINGLE_MASTER');
     expect(overview.latestRunStatus).toBe('queued');
+  });
+
+  it('accepts a valid role payload for FG-003 permissions catalog', () => {
+    const role = createRoleRequestSchema.parse({
+      key: 'finance.viewer',
+      name: 'Financeiro leitura',
+      description: 'Consulta lancamentos e consolidacoes sem alterar dados.',
+      permissionKeys: [
+        'governance.company.read',
+        'reporting.consolidated.read',
+      ],
+      companyIds: ['cmp_demo'],
+      establishmentIds: ['est_demo_matrix'],
+      costCenterIds: ['cc_finance'],
+      status: 'active',
+    });
+
+    const permission = permissionCatalogEntrySchema.parse({
+      key: 'roles.manage',
+      label: 'Gerenciar perfis',
+      description: 'Cria, edita e desativa perfis e permissoes administraveis.',
+      moduleKey: 'roles',
+      actionKey: 'manage',
+      scopeTypes: ['TENANT'],
+    });
+
+    expect(role.key).toBe('finance.viewer');
+    expect(permission.key).toBe('roles.manage');
+  });
+
+  it('accepts a valid versioned settings payload', () => {
+    const setting = updateSettingRequestSchema.parse({
+      scopeType: 'COMPANY',
+      companyId: 'cmp_demo',
+      value: {
+        prefix: 'NF',
+        nextNumber: 1824,
+      },
+      expectedVersion: 3,
+    });
+
+    expect(setting.scopeType).toBe('COMPANY');
+    expect(setting.expectedVersion).toBe(3);
   });
 });

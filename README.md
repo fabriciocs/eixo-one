@@ -159,7 +159,7 @@ eixo-one/
 
 | Caminho | Papel no sistema |
 | --- | --- |
-| `.agents/` | playbooks auxiliares para agentes Codex; hoje contem o guia de DevOps GCloud/Firebase |
+| `.agents/` | playbooks auxiliares para agentes Codex; hoje contem um guia de DevOps GCloud/Firebase e um executor senior multidisciplinar para entregas ponta a ponta |
 | `.github/workflows/ci.yml` | pipeline CI com validacao Node e Flutter |
 | `apps/` | apps cliente; hoje contem o app Flutter principal |
 | `backend/` | servicos backend; hoje contem a API Fastify |

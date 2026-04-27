@@ -1,5 +1,8 @@
 import 'package:eixoone_mobile/core/network/network_status.dart';
 import 'package:eixoone_mobile/core/network/network_status_provider.dart';
+import 'package:eixoone_mobile/features/app_shell/presentation/pages/audit_page.dart';
+import 'package:eixoone_mobile/features/app_shell/presentation/pages/roles_page.dart';
+import 'package:eixoone_mobile/features/app_shell/presentation/pages/settings_page.dart';
 import 'package:eixoone_mobile/features/auth/presentation/controllers/auth_providers.dart';
 import 'package:eixoone_mobile/features/governance/domain/models/governance_permissions.dart';
 import 'package:eixoone_mobile/features/governance/presentation/pages/company_form_page.dart';
@@ -57,10 +60,7 @@ void main() {
   testWidgets('company form validates required fields inline', (tester) async {
     await _setDesktopSurface(tester);
     await tester.pumpWidget(
-      _TestHarness(
-        session: _adminSession(),
-        child: const CompanyFormPage(),
-      ),
+      _TestHarness(session: _adminSession(), child: const CompanyFormPage()),
     );
 
     await tester.pumpAndSettle();
@@ -74,10 +74,7 @@ void main() {
   testWidgets('grants page loads users and selected grant', (tester) async {
     await _setDesktopSurface(tester);
     await tester.pumpWidget(
-      _TestHarness(
-        session: _adminSession(),
-        child: const GrantsPage(),
-      ),
+      _TestHarness(session: _adminSession(), child: const GrantsPage()),
     );
 
     await tester.pump();
@@ -87,6 +84,78 @@ void main() {
     expect(find.text('Usuarios do tenant'), findsOneWidget);
     expect(find.text('Grant de user_admin'), findsOneWidget);
     expect(find.text('Empresa padrao'), findsOneWidget);
+    expect(find.text('Papeis atribuidos'), findsOneWidget);
+    expect(find.text('Overrides de permissao'), findsOneWidget);
+  });
+
+  testWidgets('roles page loads seeded roles and permission catalog', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _adminSession(), child: const RolesPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Catalogo de perfis'), findsOneWidget);
+    expect(find.text('Administrador da plataforma'), findsWidgets);
+    expect(find.text('Novo perfil'), findsOneWidget);
+    expect(find.text('Catalogo'), findsOneWidget);
+  });
+
+  testWidgets('roles page blocks operator without role catalog permission', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _operatorSession(), child: const RolesPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sem permissao para papeis'), findsOneWidget);
+  });
+
+  testWidgets('audit page renders seeded administrative trail', (tester) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _adminSession(), child: const AuditPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Eventos visiveis'), findsOneWidget);
+    expect(find.text('role.created'), findsOneWidget);
+    expect(find.text('grant.updated'), findsOneWidget);
+  });
+
+  testWidgets('settings page loads seeded administrative settings', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _adminSession(), child: const SettingsPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Catalogo de configuracoes'), findsOneWidget);
+    expect(find.text('Serie de faturamento'), findsOneWidget);
+    expect(find.text('Restaurar padrao'), findsOneWidget);
+  });
+
+  testWidgets('settings page blocks operator without permission', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(
+      _TestHarness(session: _operatorSession(), child: const SettingsPage()),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sem permissao para configuracoes'), findsOneWidget);
   });
 
   testWidgets('consolidation page stays read-only for operator profile', (
@@ -102,10 +171,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Seu perfil esta em leitura consolidada'),
-      findsOneWidget,
-    );
+    expect(find.text('Seu perfil esta em leitura consolidada'), findsOneWidget);
     expect(find.text('Nova run formal'), findsNothing);
   });
 }
@@ -116,10 +182,7 @@ Future<void> _setDesktopSurface(WidgetTester tester) async {
 }
 
 class _TestHarness extends StatelessWidget {
-  const _TestHarness({
-    required this.session,
-    required this.child,
-  });
+  const _TestHarness({required this.session, required this.child});
 
   final AuthSession session;
   final Widget child;
@@ -137,9 +200,7 @@ class _TestHarness extends StatelessWidget {
 
     return UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(
-        home: Scaffold(body: child),
-      ),
+      child: MaterialApp(home: Scaffold(body: child)),
     );
   }
 }
@@ -162,8 +223,13 @@ AuthSession _adminSession() {
         GovernancePermissions.consolidationRead,
         GovernancePermissions.consolidationRun,
         GovernancePermissions.consolidatedRead,
+        'roles.read',
+        'roles.manage',
+        'settings.read',
+        'settings.manage',
+        'audit.read',
       ],
-      moduleKeys: ['dashboard', 'governance'],
+      moduleKeys: ['dashboard', 'governance', 'roles', 'audit'],
     ),
     organizations: const [
       OrganizationSummary(

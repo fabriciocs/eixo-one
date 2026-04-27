@@ -1,4 +1,5 @@
 import {
+  createRoleRequestSchema,
   changeUserStatusBodySchema,
   companyIdSchema,
   companyStatusTransitionBodySchema,
@@ -8,17 +9,25 @@ import {
   createSharingPolicyRequestSchema,
   establishmentIdSchema,
   establishmentStatusTransitionBodySchema,
+  listAuditEventsQuerySchema,
   listCompaniesQuerySchema,
   listConsolidationRunsQuerySchema,
   listEstablishmentsQuerySchema,
+  listRolesQuerySchema,
+  listSettingsQuerySchema,
   listSharingPoliciesQuerySchema,
   listUsersQuerySchema,
+  resetSettingRequestSchema,
+  roleIdSchema,
   sharingPolicyIdSchema,
   switchOperationalContextRequestSchema,
   updateCompanyRequestSchema,
   updateEstablishmentRequestSchema,
+  updateRoleRequestSchema,
+  updateSettingRequestSchema,
   updateSharingPolicyRequestSchema,
   upsertUserScopeGrantRequestSchema,
+  settingKeySchema,
 } from '@eixoone/shared-contracts';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -26,6 +35,7 @@ import { z } from 'zod';
 import { authenticationMiddleware } from '../middlewares/authentication.middleware.js';
 import { authorizationMiddleware } from '../middlewares/authorization.middleware.js';
 import { validateRequest } from '../middlewares/validation.middleware.js';
+import { createBaseGovernanceController } from '../modules/base-governance/interfaces/http/base-governance.controller.js';
 import { createGovernanceController } from '../modules/governance/interfaces/http/governance.controller.js';
 import { createUserController } from '../modules/users/interfaces/http/user.controller.js';
 import type { AppDependencies } from '../server.js';
@@ -50,6 +60,14 @@ const consolidationRunIdParamsSchema = z.object({
   runId: z.string().trim().min(5).max(64),
 });
 
+const roleIdParamsSchema = z.object({
+  roleId: roleIdSchema,
+});
+
+const settingKeyParamsSchema = z.object({
+  settingKey: settingKeySchema,
+});
+
 export async function registerRoutes(
   app: FastifyInstance,
   dependencies: AppDependencies,
@@ -57,6 +75,7 @@ export async function registerRoutes(
   const requireAuth = authenticationMiddleware(dependencies);
   const usersController = createUserController(dependencies);
   const governanceController = createGovernanceController(dependencies);
+  const baseGovernanceController = createBaseGovernanceController(dependencies);
 
   app.get('/health', async (_request, reply) => {
     reply.header('cache-control', 'no-store');
@@ -75,12 +94,14 @@ export async function registerRoutes(
       authReady,
       userRepositoryReady,
       governanceRepositoryReady,
+      baseGovernanceRepositoryReady,
       auditReady,
       idempotencyReady,
     ] = await Promise.all([
       dependencies.authVerifier.isReady(),
       dependencies.userRepository.isReady(),
       dependencies.governanceRepository.isReady(),
+      dependencies.baseGovernanceRepository.isReady(),
       dependencies.auditLogWriter.isReady(),
       dependencies.idempotencyStore.isReady(),
     ]);
@@ -89,6 +110,7 @@ export async function registerRoutes(
       authReady &&
       userRepositoryReady &&
       governanceRepositoryReady &&
+      baseGovernanceRepositoryReady &&
       auditReady &&
       idempotencyReady;
 
@@ -100,6 +122,7 @@ export async function registerRoutes(
         authVerifier: authReady,
         userRepository: userRepositoryReady,
         governanceRepository: governanceRepositoryReady,
+        baseGovernanceRepository: baseGovernanceRepositoryReady,
         auditLogWriter: auditReady,
         idempotencyStore: idempotencyReady,
       },
@@ -114,7 +137,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('users.read'),
+        authorizationMiddleware(dependencies, 'users.read'),
         validateRequest({
           querystring: listUsersQuerySchema.omit({ tenantId: true }),
         }),
@@ -128,7 +151,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('users.manage'),
+        authorizationMiddleware(dependencies, 'users.manage'),
         validateRequest({
           params: userIdParamsSchema,
           body: changeUserStatusBodySchema,
@@ -143,7 +166,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.read'),
+        authorizationMiddleware(dependencies, 'governance.company.read'),
         validateRequest({
           querystring: listCompaniesQuerySchema,
         }),
@@ -157,7 +180,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.read'),
+        authorizationMiddleware(dependencies, 'governance.company.read'),
         validateRequest({
           params: companyIdParamsSchema,
         }),
@@ -171,7 +194,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.create'),
+        authorizationMiddleware(dependencies, 'governance.company.create'),
         validateRequest({
           body: createCompanyRequestSchema,
         }),
@@ -185,7 +208,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.update'),
+        authorizationMiddleware(dependencies, 'governance.company.update'),
         validateRequest({
           params: companyIdParamsSchema,
           body: updateCompanyRequestSchema,
@@ -200,7 +223,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.activate'),
+        authorizationMiddleware(dependencies, 'governance.company.activate'),
         validateRequest({
           params: companyIdParamsSchema,
           body: companyStatusTransitionBodySchema,
@@ -220,7 +243,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.inactivate'),
+        authorizationMiddleware(dependencies, 'governance.company.inactivate'),
         validateRequest({
           params: companyIdParamsSchema,
           body: companyStatusTransitionBodySchema,
@@ -240,7 +263,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.company.archive'),
+        authorizationMiddleware(dependencies, 'governance.company.archive'),
         validateRequest({
           params: companyIdParamsSchema,
           body: companyStatusTransitionBodySchema,
@@ -256,7 +279,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.read'),
+        authorizationMiddleware(dependencies, 'governance.establishment.read'),
         validateRequest({
           querystring: listEstablishmentsQuerySchema,
         }),
@@ -270,7 +293,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.read'),
+        authorizationMiddleware(dependencies, 'governance.establishment.read'),
         validateRequest({
           params: establishmentIdParamsSchema,
         }),
@@ -284,7 +307,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.create'),
+        authorizationMiddleware(dependencies, 'governance.establishment.create'),
         validateRequest({
           body: createEstablishmentRequestSchema,
         }),
@@ -298,7 +321,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.update'),
+        authorizationMiddleware(dependencies, 'governance.establishment.update'),
         validateRequest({
           params: establishmentIdParamsSchema,
           body: updateEstablishmentRequestSchema,
@@ -313,7 +336,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.activate'),
+        authorizationMiddleware(dependencies, 'governance.establishment.activate'),
         validateRequest({
           params: establishmentIdParamsSchema,
           body: establishmentStatusTransitionBodySchema,
@@ -333,7 +356,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.inactivate'),
+        authorizationMiddleware(dependencies, 'governance.establishment.inactivate'),
         validateRequest({
           params: establishmentIdParamsSchema,
           body: establishmentStatusTransitionBodySchema,
@@ -353,7 +376,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.establishment.archive'),
+        authorizationMiddleware(dependencies, 'governance.establishment.archive'),
         validateRequest({
           params: establishmentIdParamsSchema,
           body: establishmentStatusTransitionBodySchema,
@@ -373,7 +396,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.user_scope.manage'),
+        authorizationMiddleware(dependencies, 'governance.user_scope.manage'),
         validateRequest({
           params: userIdParamsSchema,
         }),
@@ -387,7 +410,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.user_scope.manage'),
+        authorizationMiddleware(dependencies, 'governance.user_scope.manage'),
         validateRequest({
           params: userIdParamsSchema,
           body: upsertUserScopeGrantRequestSchema,
@@ -418,7 +441,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.context.switch'),
+        authorizationMiddleware(dependencies, 'governance.context.switch'),
         validateRequest({
           body: switchOperationalContextRequestSchema,
         }),
@@ -432,7 +455,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.sharing.policy.manage'),
+        authorizationMiddleware(dependencies, 'governance.sharing.policy.manage'),
         validateRequest({
           querystring: listSharingPoliciesQuerySchema,
         }),
@@ -446,7 +469,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.sharing.policy.manage'),
+        authorizationMiddleware(dependencies, 'governance.sharing.policy.manage'),
         validateRequest({
           body: createSharingPolicyRequestSchema,
         }),
@@ -460,7 +483,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.sharing.policy.manage'),
+        authorizationMiddleware(dependencies, 'governance.sharing.policy.manage'),
         validateRequest({
           params: sharingPolicyIdParamsSchema,
           body: updateSharingPolicyRequestSchema,
@@ -475,7 +498,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('reporting.consolidated.read'),
+        authorizationMiddleware(dependencies, 'reporting.consolidated.read'),
       ],
     },
     governanceController.getConsolidatedOverview,
@@ -486,7 +509,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.consolidation.read'),
+        authorizationMiddleware(dependencies, 'governance.consolidation.read'),
         validateRequest({
           querystring: listConsolidationRunsQuerySchema,
         }),
@@ -500,7 +523,7 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.consolidation.read'),
+        authorizationMiddleware(dependencies, 'governance.consolidation.read'),
         validateRequest({
           params: consolidationRunIdParamsSchema,
         }),
@@ -514,12 +537,124 @@ export async function registerRoutes(
     {
       preHandler: [
         requireAuth,
-        authorizationMiddleware('governance.consolidation.run'),
+        authorizationMiddleware(dependencies, 'governance.consolidation.run'),
         validateRequest({
           body: createConsolidationRunRequestSchema,
         }),
       ],
     },
     governanceController.createConsolidationRun,
+  );
+
+  app.get(
+    '/v1/governance/roles',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'roles.read'),
+        validateRequest({
+          querystring: listRolesQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listRoles,
+  );
+
+  app.post(
+    '/v1/governance/roles',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'roles.manage'),
+        validateRequest({
+          body: createRoleRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.createRole,
+  );
+
+  app.patch(
+    '/v1/governance/roles/:roleId',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'roles.manage'),
+        validateRequest({
+          params: roleIdParamsSchema,
+          body: updateRoleRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.updateRole,
+  );
+
+  app.get(
+    '/v1/governance/permissions/catalog',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'roles.read'),
+      ],
+    },
+    baseGovernanceController.listPermissionCatalog,
+  );
+
+  app.get(
+    '/v1/governance/settings',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'settings.read'),
+        validateRequest({
+          querystring: listSettingsQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listSettings,
+  );
+
+  app.put(
+    '/v1/governance/settings/:settingKey',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'settings.manage'),
+        validateRequest({
+          params: settingKeyParamsSchema,
+          body: updateSettingRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.updateSetting,
+  );
+
+  app.post(
+    '/v1/governance/settings/:settingKey/reset',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'settings.manage'),
+        validateRequest({
+          params: settingKeyParamsSchema,
+          body: resetSettingRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.resetSetting,
+  );
+
+  app.get(
+    '/v1/governance/audit-events',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'audit.read'),
+        validateRequest({
+          querystring: listAuditEventsQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listAuditEvents,
   );
 }
