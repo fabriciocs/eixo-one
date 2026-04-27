@@ -20,13 +20,59 @@ Funcionalidade de Cadastros Mestres para definir produtos, SKUs, categorias, uni
 <!-- actions-exec:run -->
 ```bash
 set -euo pipefail
+slug="fg-012-cadastro-produtos"
+zip_path="docs/actions-exec/${slug}.zip"
+export EXTRACT_DIR="$(mktemp -d)"
+trap 'rm -rf "${EXTRACT_DIR}"' EXIT
+
 echo "Validando entrega FG-012"
-test -d codigo-fonte
-test -f codigo-fonte/docs/01-definicao-produto.md
-test -f codigo-fonte/docs/02-ux-arquitetura.md
-test -f codigo-fonte/docs/03-qa-relatorio.md
-test -f codigo-fonte/database/migrations/20260427_create_products.sql
-find codigo-fonte -type f | sort
+test -f "${zip_path}"
+
+python - <<'PY'
+from pathlib import Path
+import zipfile
+
+zip_path = Path("docs/actions-exec/fg-012-cadastro-produtos.zip")
+with zipfile.ZipFile(zip_path) as zf:
+    names = zf.namelist()
+    if not names:
+        raise SystemExit("ZIP vazio")
+    for name in names:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"Caminho inseguro no ZIP: {name}")
+        if not name.startswith("codigo-fonte/"):
+            raise SystemExit(f"Entrada fora de codigo-fonte/: {name}")
+    required = [
+        "codigo-fonte/docs/01-definicao-produto.md",
+        "codigo-fonte/docs/02-ux-arquitetura.md",
+        "codigo-fonte/docs/03-qa-relatorio.md",
+        "codigo-fonte/database/migrations/20260427_create_products.sql",
+    ]
+    missing = [item for item in required if item not in names]
+    if missing:
+        raise SystemExit("Arquivos obrigatorios ausentes: " + ", ".join(missing))
+print("Manifesto do ZIP FG-012 validado com sucesso.")
+PY
+
+python - <<'PY'
+from pathlib import Path
+import os
+import zipfile
+
+zip_path = Path("docs/actions-exec/fg-012-cadastro-produtos.zip")
+extract_dir = Path(os.environ["EXTRACT_DIR"])
+with zipfile.ZipFile(zip_path) as zf:
+    zf.extractall(extract_dir)
+print(f"ZIP extraido para inspecao temporaria em {extract_dir}.")
+PY
+
+test -d "${EXTRACT_DIR}/codigo-fonte"
+test -f "${EXTRACT_DIR}/codigo-fonte/docs/01-definicao-produto.md"
+test -f "${EXTRACT_DIR}/codigo-fonte/docs/02-ux-arquitetura.md"
+test -f "${EXTRACT_DIR}/codigo-fonte/docs/03-qa-relatorio.md"
+test -f "${EXTRACT_DIR}/codigo-fonte/database/migrations/20260427_create_products.sql"
+find "${EXTRACT_DIR}/codigo-fonte" -type f | sort
 ```
 
 ## Comandos sugeridos no repositório real
