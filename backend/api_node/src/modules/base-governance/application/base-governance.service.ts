@@ -8,8 +8,10 @@ import {
   type AuditEvent,
   type BaseGovernanceRole,
   type BaseGovernanceSetting,
+  createNotificationTemplateRequestSchema,
   type CreateExportJobRequest,
   type CreateImportJobRequest,
+  type CreateNotificationTemplateRequest,
   type CreateRoleRequest,
   dataJobSchema,
   type DataJob,
@@ -17,13 +19,24 @@ import {
   type DataJobError,
   type DataJobMappingEntry,
   type DataJobPreviewRow,
+  type ListNotificationDeliveriesQuery,
+  type ListNotificationTemplatesQuery,
   type ListDataJobsQuery,
   type ListAuditEventsQuery,
   type ListRolesQuery,
   type ListSettingsQuery,
+  notificationDeliverySchema,
+  type NotificationDelivery,
+  type NotificationDeliveryStatus,
+  notificationTemplateSchema,
+  type NotificationTemplate,
   type PermissionCatalogEntry,
   type ResetSettingRequest,
+  retryNotificationRequestSchema,
+  type RetryNotificationRequest,
   type RunImportJobRequest,
+  sendNotificationRequestSchema,
+  type SendNotificationRequest,
   type SettingScopeType,
   type SettingValue,
   type SettingValueType,
@@ -44,6 +57,8 @@ import {
 import type {
   BaseGovernanceRepository,
   ListAuditFilters,
+  ListNotificationDeliveriesFilters,
+  ListNotificationTemplatesFilters,
   ListDataJobsFilters,
   ListRolesFilters,
   ListSettingsFilters,
@@ -64,6 +79,14 @@ function generateRoleId() {
 
 function generateDataJobId() {
   return `job_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
+}
+
+function generateNotificationTemplateId() {
+  return `ntf_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
+}
+
+function generateNotificationDeliveryId() {
+  return `ndl_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
 }
 
 type SettingDefinition = {
@@ -134,6 +157,11 @@ const settingDefinitions: readonly SettingDefinition[] = [
 const settingDefinitionsMap = new Map(
   settingDefinitions.map((definition) => [definition.settingKey, definition]),
 );
+
+const notificationConsentTemplateKeys = new Set([
+  'notifications.invoice.overdue.email',
+  'notifications.approval.pending.whatsapp',
+]);
 
 type ParsedTabularData = {
   headers: string[];
@@ -508,6 +536,113 @@ export class BaseGovernanceService {
     }
   }
 
+  private async validateNotificationTemplateUniqueness(input: {
+    tenantId: string;
+    key: string;
+  }) {
+    const existingTemplate = await this.repository.findNotificationTemplateByKey(
+      input.tenantId,
+      input.key,
+    );
+
+    if (existingTemplate) {
+      throw new AppError(
+        409,
+        'DUPLICATE_RECORD',
+        'Ja existe um template de notificacao com esta chave neste tenant.',
+      );
+    }
+  }
+
+  private validateNotificationRecipient(
+    channel: NotificationTemplate['channel'],
+    recipient: string,
+  ) {
+    const normalized = recipient.trim();
+    const valid =
+      (channel === 'email' &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) ||
+      (channel === 'sms' &&
+        /^\+?[1-9]\d{7,14}$/.test(normalized)) ||
+      (channel === 'whatsapp' &&
+        /^\+?[1-9]\d{7,14}$/.test(normalized)) ||
+      (channel === 'push' && normalized.length >= 8) ||
+      (channel === 'in_app' && normalized.length >= 3) ||
+      (channel === 'webhook' && /^https?:\/\//.test(normalized));
+
+    if (!valid) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'O destinatario informado nao e valido para o canal selecionado.',
+        [
+          {
+            field: 'recipient',
+            message: `Formato invalido para o canal ${channel}.`,
+          },
+        ],
+      );
+    }
+  }
+
+  private renderNotificationBody(
+    content: string,
+    variables: Record<string, string | number | boolean>,
+  ) {
+    return content.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, key) => {
+      const value = variables[key];
+      return value === undefined ? '' : `${value}`;
+    });
+  }
+
+  private resolveNotificationStatus(input: {
+    template: NotificationTemplate;
+    consentGranted: boolean;
+    recipient: string;
+  }): NotificationDeliveryStatus {
+    if (input.template.requiresConsent && !input.consentGranted) {
+      return 'suppressed';
+    }
+
+    if (
+      input.template.channel === 'webhook' &&
+      input.recipient.includes('fail')
+    ) {
+      return 'failed';
+    }
+
+    return 'sent';
+  }
+
+  private buildNotificationTemplate(input: {
+    auth: AuthContext;
+    payload: CreateNotificationTemplateRequest;
+  }) {
+    const now = new Date().toISOString();
+    return notificationTemplateSchema.parse({
+      templateId: generateNotificationTemplateId(),
+      tenantId: input.auth.tenantId,
+      key: input.payload.key,
+      moduleKey: input.payload.moduleKey,
+      label: input.payload.label,
+      description: input.payload.description,
+      channel: input.payload.channel,
+      eventKey: input.payload.eventKey,
+      subject: input.payload.subject ?? null,
+      body: input.payload.body,
+      scopeType: input.payload.scopeType,
+      companyId: input.payload.companyId,
+      establishmentId: input.payload.establishmentId,
+      requiresConsent: input.payload.requiresConsent,
+      allowAttachments: input.payload.allowAttachments,
+      retryLimit: input.payload.retryLimit,
+      status: input.payload.status,
+      version: 0,
+      createdAt: now,
+      createdBy: input.auth.uid,
+    }) as NotificationTemplate;
+  }
+
   private buildRole(input: {
     auth: AuthContext;
     currentRole?: BaseGovernanceRole;
@@ -859,6 +994,260 @@ export class BaseGovernanceService {
     });
 
     return savedSetting;
+  }
+
+  async listNotificationTemplates(
+    auth: AuthContext,
+    query: ListNotificationTemplatesQuery,
+  ) {
+    const filters: ListNotificationTemplatesFilters = {
+      search: normalizeSearch(query.search),
+      channel: query.channel,
+      eventKey: query.eventKey?.trim(),
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+
+    return this.repository.listNotificationTemplates(auth.tenantId, filters);
+  }
+
+  async createNotificationTemplate(
+    auth: AuthContext,
+    payload: CreateNotificationTemplateRequest,
+    context: RequestContextData,
+  ) {
+    const parsedPayload = createNotificationTemplateRequestSchema.parse(payload);
+    await this.validateNotificationTemplateUniqueness({
+      tenantId: auth.tenantId,
+      key: parsedPayload.key,
+    });
+
+    const template = this.buildNotificationTemplate({
+      auth,
+      payload: parsedPayload,
+    });
+    const savedTemplate = await this.repository.createNotificationTemplate(
+      template,
+    );
+
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'notification_template.created',
+      entityType: 'notification_template',
+      entityId: savedTemplate.templateId,
+      after: {
+        key: savedTemplate.key,
+        channel: savedTemplate.channel,
+        status: savedTemplate.status,
+      },
+      metadata: {
+        eventKey: savedTemplate.eventKey,
+        moduleKey: savedTemplate.moduleKey,
+      },
+    });
+
+    return savedTemplate;
+  }
+
+  async listNotificationDeliveries(
+    auth: AuthContext,
+    query: ListNotificationDeliveriesQuery,
+  ) {
+    const filters: ListNotificationDeliveriesFilters = {
+      search: normalizeSearch(query.search),
+      channel: query.channel,
+      status: query.status,
+      templateKey: query.templateKey,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+
+    return this.repository.listNotificationDeliveries(auth.tenantId, filters);
+  }
+
+  async sendNotification(
+    auth: AuthContext,
+    payload: SendNotificationRequest,
+    context: RequestContextData,
+  ) {
+    const parsedPayload = sendNotificationRequestSchema.parse(payload);
+    const template = await this.repository.findNotificationTemplateByKey(
+      auth.tenantId,
+      parsedPayload.templateKey,
+    );
+
+    if (!template || template.status !== 'active') {
+      throw new AppError(
+        404,
+        'NOT_FOUND',
+        'Template de notificacao ativo nao encontrado.',
+      );
+    }
+
+    if (
+      template.requiresConsent &&
+      notificationConsentTemplateKeys.has(template.key) &&
+      !parsedPayload.consentGranted
+    ) {
+      this.validateNotificationRecipient(template.channel, parsedPayload.recipient);
+    } else {
+      this.validateNotificationRecipient(template.channel, parsedPayload.recipient);
+    }
+
+    if (parsedPayload.attachments.length > 0 && !template.allowAttachments) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Este template nao aceita anexos no MVP atual.',
+      );
+    }
+
+    const now = new Date().toISOString();
+    const subject =
+      parsedPayload.subjectOverride ??
+      template.subject ??
+      `${template.label} - ${template.eventKey}`;
+    const body = this.renderNotificationBody(
+      template.body,
+      parsedPayload.bodyVariables,
+    );
+    const status = this.resolveNotificationStatus({
+      template,
+      consentGranted: parsedPayload.consentGranted,
+      recipient: parsedPayload.recipient,
+    });
+    const delivery = notificationDeliverySchema.parse({
+      deliveryId: generateNotificationDeliveryId(),
+      tenantId: auth.tenantId,
+      templateId: template.templateId,
+      templateKey: template.key,
+      channel: template.channel,
+      eventKey: template.eventKey,
+      recipient: parsedPayload.recipient,
+      recipientUserId: parsedPayload.recipientUserId,
+      companyId: parsedPayload.companyId ?? template.companyId,
+      establishmentId:
+        parsedPayload.establishmentId ?? template.establishmentId,
+      status,
+      consentGranted: parsedPayload.consentGranted,
+      attemptCount: status === 'suppressed' ? 0 : 1,
+      maxAttempts: Math.max(template.retryLimit, 1),
+      subject,
+      body,
+      attachments: parsedPayload.attachments,
+      metadata: parsedPayload.metadata,
+      lastError:
+        status === 'failed'
+          ? 'Falha simulada no canal para exercitar retentativa do MVP.'
+          : null,
+      queuedAt: now,
+      sentAt: status === 'sent' ? now : undefined,
+      updatedAt: now,
+      createdBy: auth.uid,
+    }) as NotificationDelivery;
+
+    const savedDelivery =
+      await this.repository.createNotificationDelivery(delivery);
+
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'notification.delivery.created',
+      entityType: 'notification_delivery',
+      entityId: savedDelivery.deliveryId,
+      after: {
+        templateKey: savedDelivery.templateKey,
+        channel: savedDelivery.channel,
+        status: savedDelivery.status,
+        consentGranted: savedDelivery.consentGranted,
+      },
+      metadata: {
+        eventKey: savedDelivery.eventKey,
+        recipient: savedDelivery.recipient,
+      },
+    });
+
+    return savedDelivery;
+  }
+
+  async retryNotificationDelivery(
+    auth: AuthContext,
+    deliveryId: string,
+    payload: RetryNotificationRequest,
+    context: RequestContextData,
+  ) {
+    retryNotificationRequestSchema.parse(payload);
+    const currentDelivery = await this.repository.findNotificationDeliveryById(
+      auth.tenantId,
+      deliveryId,
+    );
+
+    if (!currentDelivery) {
+      throw new AppError(
+        404,
+        'NOT_FOUND',
+        'Entrega de notificacao nao encontrada.',
+      );
+    }
+
+    if (
+      payload.expectedStatus &&
+      currentDelivery.status !== payload.expectedStatus
+    ) {
+      throw new AppError(
+        409,
+        'VERSION_CONFLICT',
+        'O status atual da entrega nao corresponde ao esperado.',
+      );
+    }
+
+    if (currentDelivery.status === 'sent') {
+      return currentDelivery;
+    }
+
+    if (currentDelivery.attemptCount >= currentDelivery.maxAttempts) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'O limite de tentativas desta entrega ja foi atingido.',
+      );
+    }
+
+    const now = new Date().toISOString();
+    const retriedDelivery = notificationDeliverySchema.parse({
+      ...currentDelivery,
+      attemptCount: currentDelivery.attemptCount + 1,
+      status: currentDelivery.consentGranted ? 'sent' : 'suppressed',
+      lastError: currentDelivery.consentGranted ? null : currentDelivery.lastError,
+      sentAt: currentDelivery.consentGranted ? now : currentDelivery.sentAt,
+      updatedAt: now,
+    }) as NotificationDelivery;
+
+    const savedDelivery =
+      await this.repository.saveNotificationDelivery(retriedDelivery);
+
+    await this.writeAuditEvent({
+      auth,
+      context,
+      action: 'notification.delivery.retried',
+      entityType: 'notification_delivery',
+      entityId: savedDelivery.deliveryId,
+      before: {
+        status: currentDelivery.status,
+        attemptCount: currentDelivery.attemptCount,
+      },
+      after: {
+        status: savedDelivery.status,
+        attemptCount: savedDelivery.attemptCount,
+      },
+      metadata: {
+        templateKey: savedDelivery.templateKey,
+      },
+    });
+
+    return savedDelivery;
   }
 
   async listAuditEvents(auth: AuthContext, query: ListAuditEventsQuery) {

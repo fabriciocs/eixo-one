@@ -1,0 +1,153 @@
+name: Run Bash Blocks From Markdown From Last Commit Message
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Quando true, apenas extrai e exibe os comandos, sem executar"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  run-bash-blocks-from-last-commit-md:
+    name: Extract and run bash blocks from Markdown named in last commit
+    runs-on: ubuntu-latest
+
+    env:
+      EXTRACTED_SCRIPT: ${{ github.workspace }}/extracted-bash-blocks.sh
+
+    steps:
+      # Faz checkout do repositório para permitir leitura do último commit e dos arquivos versionados.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Lê a mensagem do último commit e extrai o primeiro arquivo/caminho terminado em .md.
+      # Exemplo de mensagem aceita:
+      #   docs: adiciona guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
+      #   feat: executa docs/setup.md
+      #   arquivo: `guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md`
+      - name: Detect Markdown file from last commit message
+        id: detect_markdown
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+
+          echo "Mensagem do último commit:"
+          echo "--------------------------------------------------"
+          printf '%s\n' "${COMMIT_MESSAGE}"
+          echo "--------------------------------------------------"
+
+          MARKDOWN_FILE="$(
+            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eo '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
+          )"
+
+          if [[ -z "${MARKDOWN_FILE}" ]]; then
+            echo "Erro: nenhum arquivo .md foi encontrado na mensagem do último commit."
+            echo "Inclua o nome do arquivo Markdown na mensagem do commit, por exemplo:"
+            echo "docs: adiciona guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md"
+            exit 1
+          fi
+
+          case "${MARKDOWN_FILE}" in
+            /*|../*|*"/../"*|*".."*)
+              echo "Erro: caminho Markdown inválido ou potencialmente inseguro: ${MARKDOWN_FILE}"
+              exit 1
+              ;;
+          esac
+
+          if [[ ! -f "${MARKDOWN_FILE}" ]]; then
+            echo "Erro: arquivo Markdown citado no último commit não foi encontrado no repositório: ${MARKDOWN_FILE}"
+            echo "Verifique se o caminho informado na mensagem do commit é relativo à raiz do repositório."
+            exit 1
+          fi
+
+          echo "Arquivo Markdown detectado: ${MARKDOWN_FILE}"
+          echo "markdown_file=${MARKDOWN_FILE}" >> "${GITHUB_OUTPUT}"
+          echo "MARKDOWN_FILE=${MARKDOWN_FILE}" >> "${GITHUB_ENV}"
+
+      # Extrai somente blocos iniciados por ```bash e encerrados por ```.
+      # Blocos ```text, ```markdown, ```json, ```yaml, ```python etc. são ignorados.
+      - name: Extract bash code blocks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          awk '
+            BEGIN {
+              in_bash_block = 0
+              bash_block_count = 0
+            }
+
+            /^```bash[[:space:]]*$/ {
+              in_bash_block = 1
+              bash_block_count++
+              print ""
+              print "# ---- bash block " bash_block_count " from " ENVIRON["MARKDOWN_FILE"] " ----"
+              next
+            }
+
+            /^```[[:space:]]*$/ {
+              if (in_bash_block == 1) {
+                in_bash_block = 0
+                print ""
+              }
+              next
+            }
+
+            {
+              if (in_bash_block == 1) {
+                print
+              }
+            }
+
+            END {
+              if (in_bash_block == 1) {
+                print "Erro: existe um bloco ```bash sem fechamento com ```." > "/dev/stderr"
+                exit 2
+              }
+
+              if (bash_block_count == 0) {
+                print "Erro: nenhum bloco ```bash foi encontrado no arquivo Markdown." > "/dev/stderr"
+                exit 3
+              }
+            }
+          ' "${MARKDOWN_FILE}" > "${EXTRACTED_SCRIPT}"
+
+          chmod 700 "${EXTRACTED_SCRIPT}"
+
+      # Exibe o script extraído antes da execução para auditoria.
+      - name: Show extracted commands
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Arquivo Markdown usado: ${MARKDOWN_FILE}"
+          echo "Comandos Bash extraídos:"
+          echo "=================================================="
+          cat "${EXTRACTED_SCRIPT}"
+          echo "=================================================="
+
+      # No modo dry_run, o workflow para aqui com sucesso.
+      - name: Stop before execution in dry run mode
+        if: ${{ inputs.dry_run == true }}
+        shell: bash
+        run: |
+          echo "Dry run ativado. Os comandos foram extraídos e exibidos, mas não foram executados."
+
+      # Executa os comandos extraídos.
+      # bash -euo pipefail faz o job falhar se algum comando falhar.
+      - name: Execute extracted bash commands
+        if: ${{ inputs.dry_run == false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bash -euo pipefail "${EXTRACTED_SCRIPT}"

@@ -1,4 +1,5 @@
 import {
+  createNotificationTemplateRequestSchema,
   createExportJobRequestSchema,
   createImportJobRequestSchema,
   createRoleRequestSchema,
@@ -14,17 +15,22 @@ import {
   establishmentStatusTransitionBodySchema,
   listAuditEventsQuerySchema,
   listDataJobsQuerySchema,
+  listNotificationDeliveriesQuerySchema,
+  listNotificationTemplatesQuerySchema,
   listCompaniesQuerySchema,
   listConsolidationRunsQuerySchema,
   listEstablishmentsQuerySchema,
+  notificationDeliveryIdSchema,
   listRolesQuerySchema,
   listSettingsQuerySchema,
   listSharingPoliciesQuerySchema,
   listUsersQuerySchema,
   resetSettingRequestSchema,
+  retryNotificationRequestSchema,
   roleIdSchema,
   sharingPolicyIdSchema,
   switchOperationalContextRequestSchema,
+  sendNotificationRequestSchema,
   updateCompanyRequestSchema,
   updateEstablishmentRequestSchema,
   updateRoleRequestSchema,
@@ -75,6 +81,10 @@ const settingKeyParamsSchema = z.object({
 
 const dataJobIdParamsSchema = z.object({
   jobId: dataJobIdSchema,
+});
+
+const notificationDeliveryIdParamsSchema = z.object({
+  deliveryId: notificationDeliveryIdSchema,
 });
 
 export async function registerRoutes(
@@ -651,6 +661,77 @@ export async function registerRoutes(
       ],
     },
     baseGovernanceController.resetSetting,
+  );
+
+  app.get(
+    '/v1/governance/notifications/templates',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'notifications.read'),
+        validateRequest({
+          querystring: listNotificationTemplatesQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listNotificationTemplates,
+  );
+
+  app.post(
+    '/v1/governance/notifications/templates',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'notifications.manage'),
+        validateRequest({
+          body: createNotificationTemplateRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.createNotificationTemplate,
+  );
+
+  app.get(
+    '/v1/governance/notifications/deliveries',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'notifications.read'),
+        validateRequest({
+          querystring: listNotificationDeliveriesQuerySchema,
+        }),
+      ],
+    },
+    baseGovernanceController.listNotificationDeliveries,
+  );
+
+  app.post(
+    '/v1/governance/notifications/send',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'notifications.manage'),
+        validateRequest({
+          body: sendNotificationRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.sendNotification,
+  );
+
+  app.post(
+    '/v1/governance/notifications/deliveries/:deliveryId/retry',
+    {
+      preHandler: [
+        requireAuth,
+        authorizationMiddleware(dependencies, 'notifications.manage'),
+        validateRequest({
+          params: notificationDeliveryIdParamsSchema,
+          body: retryNotificationRequestSchema,
+        }),
+      ],
+    },
+    baseGovernanceController.retryNotificationDelivery,
   );
 
   app.get(

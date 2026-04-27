@@ -62,6 +62,43 @@ abstract class BaseGovernanceRepository {
     ResetBaseGovernanceSettingInput input,
   );
 
+  Future<BaseGovernanceListResult<NotificationTemplateRecord>>
+  listNotificationTemplates(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationTemplateStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  });
+
+  Future<NotificationTemplateRecord> createNotificationTemplate(
+    AuthSession session,
+    CreateNotificationTemplateInput input,
+  );
+
+  Future<BaseGovernanceListResult<NotificationDeliveryRecord>>
+  listNotificationDeliveries(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationDeliveryStatus? status,
+    String? templateKey,
+    int page = 1,
+    int pageSize = 50,
+  });
+
+  Future<NotificationDeliveryRecord> sendNotification(
+    AuthSession session,
+    SendNotificationInput input,
+  );
+
+  Future<NotificationDeliveryRecord> retryNotificationDelivery(
+    AuthSession session,
+    String deliveryId, {
+    NotificationDeliveryStatus? expectedStatus,
+  });
+
   Future<BaseGovernanceListResult<BaseGovernanceAuditEvent>> listAuditEvents(
     AuthSession session, {
     String? entityType,
@@ -417,6 +454,105 @@ class ApiBaseGovernanceRepository implements BaseGovernanceRepository {
   }
 
   @override
+  Future<BaseGovernanceListResult<NotificationTemplateRecord>>
+  listNotificationTemplates(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationTemplateStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final envelope = await _send(
+      method: 'GET',
+      path: '/v1/governance/notifications/templates',
+      queryParameters: <String, String>{
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (channel != null) 'channel': channel.wireName,
+        if (status != null) 'status': status.wireName,
+      },
+    );
+    return _parseListResult(envelope, NotificationTemplateRecord.fromJson);
+  }
+
+  @override
+  Future<NotificationTemplateRecord> createNotificationTemplate(
+    AuthSession session,
+    CreateNotificationTemplateInput input,
+  ) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/notifications/templates',
+      body: input.toJson(),
+    );
+    return NotificationTemplateRecord.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  @override
+  Future<BaseGovernanceListResult<NotificationDeliveryRecord>>
+  listNotificationDeliveries(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationDeliveryStatus? status,
+    String? templateKey,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final envelope = await _send(
+      method: 'GET',
+      path: '/v1/governance/notifications/deliveries',
+      queryParameters: <String, String>{
+        'page': '$page',
+        'pageSize': '$pageSize',
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (channel != null) 'channel': channel.wireName,
+        if (status != null) 'status': status.wireName,
+        if (templateKey != null && templateKey.trim().isNotEmpty)
+          'templateKey': templateKey.trim(),
+      },
+    );
+    return _parseListResult(envelope, NotificationDeliveryRecord.fromJson);
+  }
+
+  @override
+  Future<NotificationDeliveryRecord> sendNotification(
+    AuthSession session,
+    SendNotificationInput input,
+  ) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/notifications/send',
+      body: input.toJson(),
+    );
+    return NotificationDeliveryRecord.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  @override
+  Future<NotificationDeliveryRecord> retryNotificationDelivery(
+    AuthSession session,
+    String deliveryId, {
+    NotificationDeliveryStatus? expectedStatus,
+  }) async {
+    final envelope = await _send(
+      method: 'POST',
+      path: '/v1/governance/notifications/deliveries/$deliveryId/retry',
+      body: <String, dynamic>{
+        if (expectedStatus != null) 'expectedStatus': expectedStatus.wireName,
+      },
+    );
+    return NotificationDeliveryRecord.fromJson(
+      (envelope['data'] as Map<String, dynamic>? ?? const {}),
+    );
+  }
+
+  @override
   Future<BaseGovernanceListResult<BaseGovernanceAuditEvent>> listAuditEvents(
     AuthSession session, {
     String? entityType,
@@ -521,6 +657,10 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
   final List<BaseGovernanceSetting> _settings = _seedSettings();
   final List<BaseGovernanceAuditEvent> _auditEvents;
   final List<DataJob> _dataJobs;
+  final List<NotificationTemplateRecord> _notificationTemplates =
+      _seedNotificationTemplates();
+  final List<NotificationDeliveryRecord> _notificationDeliveries =
+      _seedNotificationDeliveries();
   final Map<String, List<String>> _roleKeysByUserId = <String, List<String>>{
     'user_admin': const ['platform_admin'],
     'user_operator': const ['operator'],
@@ -655,6 +795,10 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
     return items;
   }
 
+  List<String> _parseDelimitedValues(String rawValue) {
+    return _normalizeStringList(rawValue.split(RegExp(r'[,;\n]')));
+  }
+
   BaseGovernanceRole _requireRole(String tenantId, String roleId) {
     final role = _roles.cast<BaseGovernanceRole?>().firstWhere(
       (item) => item?.tenantId == tenantId && item?.roleId == roleId,
@@ -763,6 +907,14 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
     final stamp = DateTime.now().microsecondsSinceEpoch;
     final suffix = _random.nextInt(999999).toString().padLeft(6, '0');
     return 'job_$stamp$suffix';
+  }
+
+  String _renderNotificationBody(String body, JsonMap variables) {
+    var rendered = body;
+    for (final entry in variables.entries) {
+      rendered = rendered.replaceAll('{{${entry.key}}}', '${entry.value}');
+    }
+    return rendered;
   }
 
   void _requirePermission(AuthSession session, String permissionKey) {
@@ -1209,6 +1361,267 @@ class InMemoryBaseGovernanceRepository implements BaseGovernanceRepository {
   }
 
   @override
+  Future<BaseGovernanceListResult<NotificationTemplateRecord>>
+  listNotificationTemplates(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationTemplateStatus? status,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    _requirePermission(session, BaseGovernancePermissions.notificationsRead);
+    final tenantId = _tenantId(session);
+    final normalizedSearch = search?.trim().toLowerCase();
+    final filtered = _notificationTemplates
+        .where((item) => item.tenantId == tenantId)
+        .where((item) => channel == null || item.channel == channel)
+        .where((item) => status == null || item.status == status)
+        .where((item) {
+          if (normalizedSearch == null || normalizedSearch.isEmpty) {
+            return true;
+          }
+
+          return [
+            item.label,
+            item.key,
+            item.eventKey,
+            item.description ?? '',
+          ].join(' ').toLowerCase().contains(normalizedSearch);
+        })
+        .toList(growable: false)
+      ..sort((left, right) => left.label.compareTo(right.label));
+
+    final start = (page - 1) * pageSize;
+    final items = start >= filtered.length
+        ? const <NotificationTemplateRecord>[]
+        : filtered.skip(start).take(pageSize).toList(growable: false);
+
+    return BaseGovernanceListResult<NotificationTemplateRecord>(
+      items: items,
+      pagination: PaginationInfo(
+        page: page,
+        pageSize: pageSize,
+        totalItems: filtered.length,
+        hasNextPage: start + pageSize < filtered.length,
+      ),
+    );
+  }
+
+  @override
+  Future<NotificationTemplateRecord> createNotificationTemplate(
+    AuthSession session,
+    CreateNotificationTemplateInput input,
+  ) async {
+    _requirePermission(session, BaseGovernancePermissions.notificationsManage);
+    final tenantId = _tenantId(session);
+    final now = DateTime.now().toUtc().toIso8601String();
+    final template = NotificationTemplateRecord(
+      templateId: 'ntf_${_jobId()}',
+      tenantId: tenantId,
+      key: input.key.trim().toLowerCase(),
+      moduleKey: input.moduleKey.trim(),
+      label: input.label.trim(),
+      description: input.description?.trim().isEmpty ?? true
+          ? null
+          : input.description?.trim(),
+      channel: input.channel,
+      eventKey: input.eventKey.trim(),
+      subject: input.subject?.trim().isEmpty ?? true ? null : input.subject?.trim(),
+      body: input.body.trim(),
+      scopeType: input.scopeType,
+      companyId: input.companyId,
+      establishmentId: input.establishmentId,
+      requiresConsent: input.requiresConsent,
+      allowAttachments: input.allowAttachments,
+      retryLimit: input.retryLimit,
+      status: input.status,
+      version: 0,
+      createdAt: now,
+      createdBy: session.user.id,
+    );
+    _notificationTemplates.insert(0, template);
+    _auditEvents.insert(
+      0,
+      _buildAuditEvent(
+        tenantId: tenantId,
+        actorUserId: session.user.id,
+        entityType: 'notification_template',
+        entityId: template.templateId,
+        action: 'notification_template.created',
+        after: <String, dynamic>{
+          'key': template.key,
+          'status': template.status.wireName,
+        },
+      ),
+    );
+    return template;
+  }
+
+  @override
+  Future<BaseGovernanceListResult<NotificationDeliveryRecord>>
+  listNotificationDeliveries(
+    AuthSession session, {
+    String? search,
+    NotificationChannel? channel,
+    NotificationDeliveryStatus? status,
+    String? templateKey,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    _requirePermission(session, BaseGovernancePermissions.notificationsRead);
+    final tenantId = _tenantId(session);
+    final normalizedSearch = search?.trim().toLowerCase();
+    final filtered = _notificationDeliveries
+        .where((item) => item.tenantId == tenantId)
+        .where((item) => channel == null || item.channel == channel)
+        .where((item) => status == null || item.status == status)
+        .where((item) => templateKey == null || item.templateKey == templateKey)
+        .where((item) {
+          if (normalizedSearch == null || normalizedSearch.isEmpty) {
+            return true;
+          }
+
+          return [
+            item.templateKey,
+            item.recipient,
+            item.eventKey,
+            item.status.label,
+          ].join(' ').toLowerCase().contains(normalizedSearch);
+        })
+        .toList(growable: false)
+      ..sort((left, right) => right.queuedAt.compareTo(left.queuedAt));
+
+    final start = (page - 1) * pageSize;
+    final items = start >= filtered.length
+        ? const <NotificationDeliveryRecord>[]
+        : filtered.skip(start).take(pageSize).toList(growable: false);
+
+    return BaseGovernanceListResult<NotificationDeliveryRecord>(
+      items: items,
+      pagination: PaginationInfo(
+        page: page,
+        pageSize: pageSize,
+        totalItems: filtered.length,
+        hasNextPage: start + pageSize < filtered.length,
+      ),
+    );
+  }
+
+  @override
+  Future<NotificationDeliveryRecord> sendNotification(
+    AuthSession session,
+    SendNotificationInput input,
+  ) async {
+    _requirePermission(session, BaseGovernancePermissions.notificationsManage);
+    final tenantId = _tenantId(session);
+    final template = _notificationTemplates.firstWhere(
+      (item) => item.tenantId == tenantId && item.key == input.templateKey,
+      orElse: () => throw const AppFailure(
+        title: 'Registro nao encontrado',
+        message: 'Template de notificacao nao encontrado.',
+        code: 'NOT_FOUND',
+      ),
+    );
+    final now = DateTime.now().toUtc().toIso8601String();
+    final status =
+        template.requiresConsent && !input.consentGranted
+        ? NotificationDeliveryStatus.suppressed
+        : input.recipient.contains('fail')
+        ? NotificationDeliveryStatus.failed
+        : NotificationDeliveryStatus.sent;
+    final delivery = NotificationDeliveryRecord(
+      deliveryId: 'ndl_${_jobId()}',
+      tenantId: tenantId,
+      templateId: template.templateId,
+      templateKey: template.key,
+      channel: template.channel,
+      eventKey: template.eventKey,
+      recipient: input.recipient.trim(),
+      recipientUserId: input.recipientUserId,
+      companyId: input.companyId,
+      establishmentId: input.establishmentId,
+      status: status,
+      consentGranted: input.consentGranted,
+      attemptCount: status == NotificationDeliveryStatus.suppressed ? 0 : 1,
+      maxAttempts: template.retryLimit == 0 ? 1 : template.retryLimit,
+      subject: input.subjectOverride?.trim().isNotEmpty ?? false
+          ? input.subjectOverride!.trim()
+          : template.subject ?? template.label,
+      body: _renderNotificationBody(template.body, input.bodyVariables),
+      attachments: input.attachments,
+      metadata: input.metadata,
+      lastError: status == NotificationDeliveryStatus.failed ? 'HTTP 503' : null,
+      queuedAt: now,
+      sentAt: status == NotificationDeliveryStatus.sent ? now : null,
+      updatedAt: now,
+      createdBy: session.user.id,
+    );
+    _notificationDeliveries.insert(0, delivery);
+    return delivery;
+  }
+
+  @override
+  Future<NotificationDeliveryRecord> retryNotificationDelivery(
+    AuthSession session,
+    String deliveryId, {
+    NotificationDeliveryStatus? expectedStatus,
+  }) async {
+    _requirePermission(session, BaseGovernancePermissions.notificationsManage);
+    final index = _notificationDeliveries.indexWhere(
+      (item) => item.deliveryId == deliveryId,
+    );
+    if (index == -1) {
+      throw const AppFailure(
+        title: 'Registro nao encontrado',
+        message: 'Entrega de notificacao nao encontrada.',
+        code: 'NOT_FOUND',
+      );
+    }
+
+    final current = _notificationDeliveries[index];
+    if (expectedStatus != null && current.status != expectedStatus) {
+      throw const AppFailure(
+        title: 'Conflito de versao',
+        message: 'O status atual nao corresponde ao esperado para retentativa.',
+        code: 'VERSION_CONFLICT',
+      );
+    }
+
+    final updated = NotificationDeliveryRecord(
+      deliveryId: current.deliveryId,
+      tenantId: current.tenantId,
+      templateId: current.templateId,
+      templateKey: current.templateKey,
+      channel: current.channel,
+      eventKey: current.eventKey,
+      recipient: current.recipient,
+      recipientUserId: current.recipientUserId,
+      companyId: current.companyId,
+      establishmentId: current.establishmentId,
+      status: current.consentGranted
+          ? NotificationDeliveryStatus.sent
+          : NotificationDeliveryStatus.suppressed,
+      consentGranted: current.consentGranted,
+      attemptCount: current.attemptCount + 1,
+      maxAttempts: current.maxAttempts,
+      subject: current.subject,
+      body: current.body,
+      attachments: current.attachments,
+      metadata: current.metadata,
+      lastError: current.consentGranted ? null : current.lastError,
+      queuedAt: current.queuedAt,
+      sentAt: current.consentGranted
+          ? DateTime.now().toUtc().toIso8601String()
+          : current.sentAt,
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+      createdBy: current.createdBy,
+    );
+    _notificationDeliveries[index] = updated;
+    return updated;
+  }
+
+  @override
   Future<BaseGovernanceListResult<BaseGovernanceAuditEvent>> listAuditEvents(
     AuthSession session, {
     String? entityType,
@@ -1600,6 +2013,23 @@ _permissionCatalog = <PermissionCatalogEntry>[
     scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
   ),
   PermissionCatalogEntry(
+    key: BaseGovernancePermissions.notificationsRead,
+    label: 'Consultar notificacoes',
+    description: 'Lista templates, filas e entregas de comunicacao do tenant.',
+    moduleKey: 'notifications',
+    actionKey: 'read',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  ),
+  PermissionCatalogEntry(
+    key: BaseGovernancePermissions.notificationsManage,
+    label: 'Gerenciar notificacoes',
+    description:
+        'Cria templates, dispara envios e reprocessa falhas com auditoria.',
+    moduleKey: 'notifications',
+    actionKey: 'manage',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  ),
+  PermissionCatalogEntry(
     key: BaseGovernancePermissions.auditRead,
     label: 'Consultar auditoria',
     description: 'Le eventos auditaveis por entidade, usuario e correlacao.',
@@ -1860,6 +2290,99 @@ List<DataJob> _seedDataJobs() {
       createdBy: 'user_admin',
       createdAt: '2026-04-26T18:30:00.000Z',
       completedAt: '2026-04-26T18:30:02.000Z',
+    ),
+  ];
+}
+
+List<NotificationTemplateRecord> _seedNotificationTemplates() {
+  return const <NotificationTemplateRecord>[
+    NotificationTemplateRecord(
+      templateId: 'ntf_invoice_overdue_email',
+      tenantId: 'tenant_demo',
+      key: 'notifications.invoice.overdue.email',
+      moduleKey: 'notifications',
+      label: 'Cobranca de vencimento',
+      description: 'Avisa clientes sobre documentos vencidos por e-mail.',
+      channel: NotificationChannel.email,
+      eventKey: 'invoice.overdue',
+      subject: 'Titulo vencido em aberto',
+      body:
+          'Olá {{customerName}}, identifiquei o título {{invoiceNumber}} em aberto.',
+      scopeType: SettingScopeType.tenant,
+      requiresConsent: true,
+      allowAttachments: true,
+      retryLimit: 3,
+      status: NotificationTemplateStatus.active,
+      version: 1,
+      createdAt: '2026-04-26T18:40:00.000Z',
+      createdBy: 'user_admin',
+    ),
+    NotificationTemplateRecord(
+      templateId: 'ntf_approval_pending_whatsapp',
+      tenantId: 'tenant_demo',
+      key: 'notifications.approval.pending.whatsapp',
+      moduleKey: 'governance',
+      label: 'Aprovacao pendente',
+      description: 'Dispara alerta curto para aprovadores operacionais.',
+      channel: NotificationChannel.whatsapp,
+      eventKey: 'approval.pending',
+      body: 'Aprovacao pendente para {{documentCode}}.',
+      scopeType: SettingScopeType.company,
+      companyId: 'cmp_demo',
+      requiresConsent: true,
+      allowAttachments: false,
+      retryLimit: 2,
+      status: NotificationTemplateStatus.active,
+      version: 0,
+      createdAt: '2026-04-26T18:42:00.000Z',
+      createdBy: 'user_admin',
+    ),
+  ];
+}
+
+List<NotificationDeliveryRecord> _seedNotificationDeliveries() {
+  return const <NotificationDeliveryRecord>[
+    NotificationDeliveryRecord(
+      deliveryId: 'ndl_seed_invoice_overdue_001',
+      tenantId: 'tenant_demo',
+      templateId: 'ntf_invoice_overdue_email',
+      templateKey: 'notifications.invoice.overdue.email',
+      channel: NotificationChannel.email,
+      eventKey: 'invoice.overdue',
+      recipient: 'financeiro@cliente.com',
+      status: NotificationDeliveryStatus.sent,
+      consentGranted: true,
+      attemptCount: 1,
+      maxAttempts: 3,
+      subject: 'Titulo vencido em aberto',
+      body: 'Olá Cliente, identifiquei o título FAT-182 em aberto.',
+      attachments: <NotificationAttachment>[],
+      metadata: <String, dynamic>{'invoiceNumber': 'FAT-182'},
+      queuedAt: '2026-04-26T18:45:00.000Z',
+      sentAt: '2026-04-26T18:45:02.000Z',
+      updatedAt: '2026-04-26T18:45:02.000Z',
+      createdBy: 'user_admin',
+    ),
+    NotificationDeliveryRecord(
+      deliveryId: 'ndl_seed_webhook_fail_001',
+      tenantId: 'tenant_demo',
+      templateId: 'ntf_invoice_overdue_email',
+      templateKey: 'notifications.invoice.overdue.email',
+      channel: NotificationChannel.webhook,
+      eventKey: 'invoice.overdue',
+      recipient: 'https://fail.example.com/webhook',
+      status: NotificationDeliveryStatus.failed,
+      consentGranted: true,
+      attemptCount: 1,
+      maxAttempts: 3,
+      subject: 'Falha de webhook',
+      body: 'Entrega de teste com falha.',
+      attachments: <NotificationAttachment>[],
+      metadata: <String, dynamic>{},
+      lastError: 'HTTP 503',
+      queuedAt: '2026-04-26T18:50:00.000Z',
+      updatedAt: '2026-04-26T18:50:01.000Z',
+      createdBy: 'user_admin',
     ),
   ];
 }

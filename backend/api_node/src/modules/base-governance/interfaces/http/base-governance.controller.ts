@@ -1,15 +1,21 @@
 import {
+  createNotificationTemplateRequestSchema,
   createExportJobRequestSchema,
   createImportJobRequestSchema,
   createRoleRequestSchema,
   dataJobIdSchema,
   listAuditEventsQuerySchema,
   listDataJobsQuerySchema,
+  listNotificationDeliveriesQuerySchema,
+  listNotificationTemplatesQuerySchema,
   listRolesQuerySchema,
+  notificationDeliveryIdSchema,
   listSettingsQuerySchema,
   resetSettingRequestSchema,
   runImportJobRequestSchema,
+  retryNotificationRequestSchema,
   roleIdSchema,
+  sendNotificationRequestSchema,
   settingKeySchema,
   updateRoleRequestSchema,
   updateSettingRequestSchema,
@@ -30,6 +36,10 @@ const settingKeyParamsSchema = z.object({
 
 const dataJobIdParamsSchema = z.object({
   jobId: dataJobIdSchema,
+});
+
+const notificationDeliveryIdParamsSchema = z.object({
+  deliveryId: notificationDeliveryIdSchema,
 });
 
 export function createBaseGovernanceController(dependencies: AppDependencies) {
@@ -139,6 +149,94 @@ export function createBaseGovernanceController(dependencies: AppDependencies) {
       );
 
       return sendSuccess(request, reply, setting);
+    },
+    listNotificationTemplates: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const query = listNotificationTemplatesQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listNotificationTemplates(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        { items: result.items },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    createNotificationTemplate: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const body = createNotificationTemplateRequestSchema.parse(request.body);
+      const template = await dependencies.baseGovernanceService.createNotificationTemplate(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, template);
+    },
+    listNotificationDeliveries: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const query = listNotificationDeliveriesQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listNotificationDeliveries(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        { items: result.items },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    sendNotification: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = sendNotificationRequestSchema.parse(request.body);
+      const delivery = await dependencies.baseGovernanceService.sendNotification(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, delivery);
+    },
+    retryNotificationDelivery: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const params = notificationDeliveryIdParamsSchema.parse(request.params);
+      const body = retryNotificationRequestSchema.parse(request.body);
+      const delivery = await dependencies.baseGovernanceService.retryNotificationDelivery(
+        request.auth!,
+        params.deliveryId,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, delivery);
     },
     listAuditEvents: async (request: FastifyRequest, reply: FastifyReply) => {
       const query = listAuditEventsQuerySchema.parse(request.query);

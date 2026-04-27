@@ -21,6 +21,8 @@ describe('Base Governance API', () => {
         'roles.manage',
         'settings.read',
         'settings.manage',
+        'notifications.read',
+        'notifications.manage',
         'audit.read',
         'data_jobs.read',
         'data_jobs.manage',
@@ -211,6 +213,106 @@ describe('Base Governance API', () => {
 
     expect(auditResponse.statusCode).toBe(200);
     expect(auditResponse.json().data.items).toHaveLength(2);
+  });
+
+  it('creates templates, sends notifications and retries failures', async () => {
+    const server = await createApp();
+
+    const listResponse = await server.inject({
+      method: 'GET',
+      url: '/v1/governance/notifications/templates?page=1&pageSize=20',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().data.items.length).toBeGreaterThan(0);
+
+    const createTemplateResponse = await server.inject({
+      method: 'POST',
+      url: '/v1/governance/notifications/templates',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        key: 'notifications.manual.followup.email',
+        moduleKey: 'notifications',
+        label: 'Follow-up manual',
+        channel: 'email',
+        eventKey: 'manual.followup',
+        subject: 'Pendencia em aberto',
+        body: 'Olá {{customerName}}, existe uma pendência para {{documentCode}}.',
+        scopeType: 'TENANT',
+        requiresConsent: true,
+        allowAttachments: false,
+        retryLimit: 2,
+        status: 'active',
+      },
+    });
+
+    expect(createTemplateResponse.statusCode).toBe(201);
+    expect(createTemplateResponse.json().data.key).toBe(
+      'notifications.manual.followup.email',
+    );
+
+    const sendResponse = await server.inject({
+      method: 'POST',
+      url: '/v1/governance/notifications/send',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        templateKey: 'notifications.manual.followup.email',
+        recipient: 'financeiro@cliente.com',
+        bodyVariables: {
+          customerName: 'Cliente Demo',
+          documentCode: 'DOC-101',
+        },
+        consentGranted: true,
+        metadata: {
+          source: 'integration-test',
+        },
+      },
+    });
+
+    expect(sendResponse.statusCode).toBe(201);
+    expect(sendResponse.json().data.status).toBe('sent');
+
+    const failedResponse = await server.inject({
+      method: 'POST',
+      url: '/v1/governance/notifications/send',
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        templateKey: 'notifications.manual.followup.email',
+        recipient: 'fail@cliente.com',
+        bodyVariables: {
+          customerName: 'Cliente Demo',
+          documentCode: 'DOC-102',
+        },
+        consentGranted: true,
+        metadata: {},
+      },
+    });
+
+    expect(failedResponse.statusCode).toBe(201);
+    expect(failedResponse.json().data.status).toBe('failed');
+
+    const retryResponse = await server.inject({
+      method: 'POST',
+      url: `/v1/governance/notifications/deliveries/${failedResponse.json().data.deliveryId}/retry`,
+      headers: {
+        authorization: 'Bearer token-admin',
+      },
+      payload: {
+        expectedStatus: 'failed',
+      },
+    });
+
+    expect(retryResponse.statusCode).toBe(200);
+    expect(retryResponse.json().data.status).toBe('sent');
   });
 
   it('authorizes access through persisted role grants even without claim permission', async () => {

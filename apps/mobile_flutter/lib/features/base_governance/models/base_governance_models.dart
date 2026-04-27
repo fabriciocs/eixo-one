@@ -775,3 +775,368 @@ class CreateExportJobInput {
     if (establishmentId != null) 'establishmentId': establishmentId,
   };
 }
+
+enum NotificationChannel {
+  inApp('in_app', 'In-app'),
+  email('email', 'E-mail'),
+  whatsapp('whatsapp', 'WhatsApp'),
+  sms('sms', 'SMS'),
+  push('push', 'Push'),
+  webhook('webhook', 'Webhook');
+
+  const NotificationChannel(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static NotificationChannel fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => NotificationChannel.inApp,
+    );
+  }
+}
+
+enum NotificationTemplateStatus {
+  draft('draft', 'Rascunho'),
+  active('active', 'Ativo'),
+  inactive('inactive', 'Inativo'),
+  archived('archived', 'Arquivado');
+
+  const NotificationTemplateStatus(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static NotificationTemplateStatus fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => NotificationTemplateStatus.draft,
+    );
+  }
+}
+
+enum NotificationDeliveryStatus {
+  queued('queued', 'Na fila'),
+  processing('processing', 'Processando'),
+  sent('sent', 'Enviado'),
+  failed('failed', 'Falhou'),
+  suppressed('suppressed', 'Suprimido');
+
+  const NotificationDeliveryStatus(this.wireName, this.label);
+
+  final String wireName;
+  final String label;
+
+  static NotificationDeliveryStatus fromWire(String value) {
+    return values.firstWhere(
+      (item) => item.wireName == value,
+      orElse: () => NotificationDeliveryStatus.queued,
+    );
+  }
+}
+
+class NotificationAttachment {
+  const NotificationAttachment({
+    required this.fileName,
+    required this.contentType,
+    required this.url,
+  });
+
+  final String fileName;
+  final String contentType;
+  final String url;
+
+  factory NotificationAttachment.fromJson(JsonMap json) {
+    return NotificationAttachment(
+      fileName: _readString(json['fileName']),
+      contentType: _readString(json['contentType']),
+      url: _readString(json['url']),
+    );
+  }
+
+  JsonMap toJson() => {
+    'fileName': fileName,
+    'contentType': contentType,
+    'url': url,
+  };
+}
+
+class NotificationTemplateRecord {
+  const NotificationTemplateRecord({
+    required this.templateId,
+    required this.tenantId,
+    required this.key,
+    required this.moduleKey,
+    required this.label,
+    required this.channel,
+    required this.eventKey,
+    required this.body,
+    required this.scopeType,
+    required this.requiresConsent,
+    required this.allowAttachments,
+    required this.retryLimit,
+    required this.status,
+    required this.version,
+    required this.createdAt,
+    required this.createdBy,
+    this.description,
+    this.subject,
+    this.companyId,
+    this.establishmentId,
+    this.updatedAt,
+    this.updatedBy,
+  });
+
+  final String templateId;
+  final String tenantId;
+  final String key;
+  final String moduleKey;
+  final String label;
+  final String? description;
+  final NotificationChannel channel;
+  final String eventKey;
+  final String? subject;
+  final String body;
+  final SettingScopeType scopeType;
+  final String? companyId;
+  final String? establishmentId;
+  final bool requiresConsent;
+  final bool allowAttachments;
+  final int retryLimit;
+  final NotificationTemplateStatus status;
+  final int version;
+  final String createdAt;
+  final String createdBy;
+  final String? updatedAt;
+  final String? updatedBy;
+
+  factory NotificationTemplateRecord.fromJson(JsonMap json) {
+    return NotificationTemplateRecord(
+      templateId: _readString(json['templateId']),
+      tenantId: _readString(json['tenantId']),
+      key: _readString(json['key']),
+      moduleKey: _readString(json['moduleKey']),
+      label: _readString(json['label']),
+      description: (_readString(json['description'])).isEmpty
+          ? null
+          : _readString(json['description']),
+      channel: NotificationChannel.fromWire(_readString(json['channel'])),
+      eventKey: _readString(json['eventKey']),
+      subject: (_readString(json['subject'])).isEmpty
+          ? null
+          : _readString(json['subject']),
+      body: _readString(json['body']),
+      scopeType: SettingScopeType.fromWire(_readString(json['scopeType'])),
+      companyId: (_readString(json['companyId'])).isEmpty
+          ? null
+          : _readString(json['companyId']),
+      establishmentId: (_readString(json['establishmentId'])).isEmpty
+          ? null
+          : _readString(json['establishmentId']),
+      requiresConsent: json['requiresConsent'] as bool? ?? true,
+      allowAttachments: json['allowAttachments'] as bool? ?? false,
+      retryLimit: json['retryLimit'] as int? ?? 0,
+      status: NotificationTemplateStatus.fromWire(_readString(json['status'])),
+      version: json['version'] as int? ?? 0,
+      createdAt: _readString(json['createdAt']),
+      createdBy: _readString(json['createdBy']),
+      updatedAt: (_readString(json['updatedAt'])).isEmpty
+          ? null
+          : _readString(json['updatedAt']),
+      updatedBy: (_readString(json['updatedBy'])).isEmpty
+          ? null
+          : _readString(json['updatedBy']),
+    );
+  }
+}
+
+class NotificationDeliveryRecord {
+  const NotificationDeliveryRecord({
+    required this.deliveryId,
+    required this.tenantId,
+    required this.templateId,
+    required this.templateKey,
+    required this.channel,
+    required this.eventKey,
+    required this.recipient,
+    required this.status,
+    required this.consentGranted,
+    required this.attemptCount,
+    required this.maxAttempts,
+    required this.body,
+    required this.attachments,
+    required this.metadata,
+    required this.queuedAt,
+    required this.createdBy,
+    this.recipientUserId,
+    this.companyId,
+    this.establishmentId,
+    this.subject,
+    this.lastError,
+    this.sentAt,
+    this.updatedAt,
+  });
+
+  final String deliveryId;
+  final String tenantId;
+  final String templateId;
+  final String templateKey;
+  final NotificationChannel channel;
+  final String eventKey;
+  final String recipient;
+  final String? recipientUserId;
+  final String? companyId;
+  final String? establishmentId;
+  final NotificationDeliveryStatus status;
+  final bool consentGranted;
+  final int attemptCount;
+  final int maxAttempts;
+  final String? subject;
+  final String body;
+  final List<NotificationAttachment> attachments;
+  final JsonMap metadata;
+  final String? lastError;
+  final String queuedAt;
+  final String? sentAt;
+  final String? updatedAt;
+  final String createdBy;
+
+  factory NotificationDeliveryRecord.fromJson(JsonMap json) {
+    return NotificationDeliveryRecord(
+      deliveryId: _readString(json['deliveryId']),
+      tenantId: _readString(json['tenantId']),
+      templateId: _readString(json['templateId']),
+      templateKey: _readString(json['templateKey']),
+      channel: NotificationChannel.fromWire(_readString(json['channel'])),
+      eventKey: _readString(json['eventKey']),
+      recipient: _readString(json['recipient']),
+      recipientUserId: (_readString(json['recipientUserId'])).isEmpty
+          ? null
+          : _readString(json['recipientUserId']),
+      companyId: (_readString(json['companyId'])).isEmpty
+          ? null
+          : _readString(json['companyId']),
+      establishmentId: (_readString(json['establishmentId'])).isEmpty
+          ? null
+          : _readString(json['establishmentId']),
+      status: NotificationDeliveryStatus.fromWire(_readString(json['status'])),
+      consentGranted: json['consentGranted'] as bool? ?? true,
+      attemptCount: json['attemptCount'] as int? ?? 0,
+      maxAttempts: json['maxAttempts'] as int? ?? 0,
+      subject: (_readString(json['subject'])).isEmpty
+          ? null
+          : _readString(json['subject']),
+      body: _readString(json['body']),
+      attachments: _readList(
+        json['attachments'],
+        NotificationAttachment.fromJson,
+      ),
+      metadata: _readJsonMap(json['metadata']),
+      lastError: (_readString(json['lastError'])).isEmpty
+          ? null
+          : _readString(json['lastError']),
+      queuedAt: _readString(json['queuedAt']),
+      sentAt: (_readString(json['sentAt'])).isEmpty
+          ? null
+          : _readString(json['sentAt']),
+      updatedAt: (_readString(json['updatedAt'])).isEmpty
+          ? null
+          : _readString(json['updatedAt']),
+      createdBy: _readString(json['createdBy']),
+    );
+  }
+}
+
+class CreateNotificationTemplateInput {
+  const CreateNotificationTemplateInput({
+    required this.key,
+    required this.moduleKey,
+    required this.label,
+    required this.channel,
+    required this.eventKey,
+    required this.body,
+    required this.scopeType,
+    required this.requiresConsent,
+    required this.allowAttachments,
+    required this.retryLimit,
+    required this.status,
+    this.description,
+    this.subject,
+    this.companyId,
+    this.establishmentId,
+  });
+
+  final String key;
+  final String moduleKey;
+  final String label;
+  final String? description;
+  final NotificationChannel channel;
+  final String eventKey;
+  final String? subject;
+  final String body;
+  final SettingScopeType scopeType;
+  final String? companyId;
+  final String? establishmentId;
+  final bool requiresConsent;
+  final bool allowAttachments;
+  final int retryLimit;
+  final NotificationTemplateStatus status;
+
+  JsonMap toJson() => {
+    'key': key,
+    'moduleKey': moduleKey,
+    'label': label,
+    if (description != null) 'description': description,
+    'channel': channel.wireName,
+    'eventKey': eventKey,
+    if (subject != null) 'subject': subject,
+    'body': body,
+    'scopeType': scopeType.wireName,
+    if (companyId != null) 'companyId': companyId,
+    if (establishmentId != null) 'establishmentId': establishmentId,
+    'requiresConsent': requiresConsent,
+    'allowAttachments': allowAttachments,
+    'retryLimit': retryLimit,
+    'status': status.wireName,
+  };
+}
+
+class SendNotificationInput {
+  const SendNotificationInput({
+    required this.templateKey,
+    required this.recipient,
+    required this.subjectOverride,
+    required this.bodyVariables,
+    required this.attachments,
+    required this.consentGranted,
+    required this.metadata,
+    this.recipientUserId,
+    this.companyId,
+    this.establishmentId,
+  });
+
+  final String templateKey;
+  final String recipient;
+  final String? recipientUserId;
+  final String? companyId;
+  final String? establishmentId;
+  final String? subjectOverride;
+  final JsonMap bodyVariables;
+  final List<NotificationAttachment> attachments;
+  final bool consentGranted;
+  final JsonMap metadata;
+
+  JsonMap toJson() => {
+    'templateKey': templateKey,
+    'recipient': recipient,
+    if (recipientUserId != null) 'recipientUserId': recipientUserId,
+    if (companyId != null) 'companyId': companyId,
+    if (establishmentId != null) 'establishmentId': establishmentId,
+    if (subjectOverride != null) 'subjectOverride': subjectOverride,
+    'bodyVariables': bodyVariables,
+    'attachments': attachments.map((item) => item.toJson()).toList(growable: false),
+    'consentGranted': consentGranted,
+    'metadata': metadata,
+  };
+}
