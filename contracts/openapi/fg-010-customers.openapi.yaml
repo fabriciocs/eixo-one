@@ -1,0 +1,348 @@
+openapi: 3.1.0
+info:
+  title: FG-010 Customers API
+  version: 0.1.0
+  description: API para cadastro de clientes multiempresa/multifilial.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+tags:
+  - name: Customers
+paths:
+  /customers:
+    get:
+      tags: [Customers]
+      operationId: listCustomers
+      summary: Lista clientes autorizados
+      parameters:
+        - $ref: "#/components/parameters/EmpresaId"
+        - $ref: "#/components/parameters/FilialId"
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/CustomerStatus" }
+        - name: tipoPessoa
+          in: query
+          schema: { $ref: "#/components/schemas/PersonType" }
+        - name: tag
+          in: query
+          schema: { type: string, maxLength: 32 }
+        - name: vendedorResponsavelId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    post:
+      tags: [Customers]
+      operationId: createCustomer
+      summary: Cria cliente
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+      responses:
+        "201":
+          description: Cliente criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /customers/{customerId}:
+    get:
+      tags: [Customers]
+      operationId: getCustomer
+      summary: Obtém cliente
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+      responses:
+        "200":
+          description: Cliente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Customers]
+      operationId: updateCustomer
+      summary: Atualiza cliente com concorrência otimista
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomerRequest"
+      responses:
+        "200":
+          description: Cliente atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Customers]
+      operationId: softDeleteCustomer
+      summary: Exclui logicamente cliente
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 80 }
+      responses:
+        "204": { description: Excluído logicamente }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /customers/{customerId}/status:
+    post:
+      tags: [Customers]
+      operationId: changeCustomerStatus
+      summary: Altera status do cliente
+      parameters:
+        - $ref: "#/components/parameters/CustomerId"
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status:
+                  $ref: "#/components/schemas/CustomerStatus"
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+      responses:
+        "200":
+          description: Status atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    EmpresaId:
+      name: empresaId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    FilialId:
+      name: filialId
+      in: query
+      required: false
+      schema: { type: string, format: uuid }
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, minLength: 8, maxLength: 120 }
+  schemas:
+    PersonType:
+      type: string
+      enum: [PF, PJ, ESTRANGEIRO]
+    CustomerStatus:
+      type: string
+      enum: [rascunho, ativo, bloqueado, inativo]
+    Address:
+      type: object
+      required: [label, city, country, isPrimary]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        label: { type: string, minLength: 2, maxLength: 80 }
+        postalCode: { type: string, maxLength: 20 }
+        street: { type: string, maxLength: 150 }
+        number: { type: string, maxLength: 20 }
+        complement: { type: string, maxLength: 80 }
+        district: { type: string, maxLength: 80 }
+        city: { type: string, minLength: 2, maxLength: 80 }
+        state: { type: string, maxLength: 40 }
+        country: { type: string, minLength: 2, maxLength: 2 }
+        isPrimary: { type: boolean }
+    Contact:
+      type: object
+      required: [name, isPrimary]
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 2, maxLength: 120 }
+        role: { type: string, maxLength: 80 }
+        email: { type: string, format: email, maxLength: 180 }
+        phone: { type: string, maxLength: 30 }
+        isPrimary: { type: boolean }
+    Customer:
+      type: object
+      required: [id, tenantId, empresaId, tipoPessoa, nome, status, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        empresaId: { type: string, format: uuid }
+        filialId: { type: string, format: uuid }
+        codigo: { type: string, maxLength: 30 }
+        tipoPessoa: { $ref: "#/components/schemas/PersonType" }
+        nome: { type: string, minLength: 2, maxLength: 150 }
+        nomeFantasia: { type: string, maxLength: 150 }
+        cpfCnpj: { type: string, maxLength: 32 }
+        documentoMascarado: { type: string }
+        email: { type: string, format: email }
+        telefone: { type: string }
+        limiteCreditoCentavos: { type: integer, minimum: 0 }
+        vendedorResponsavelId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/CustomerStatus" }
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 2, maxLength: 32 }
+        addresses:
+          type: array
+          items: { $ref: "#/components/schemas/Address" }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/Contact" }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateCustomerRequest:
+      allOf:
+        - $ref: "#/components/schemas/CustomerMutable"
+    UpdateCustomerRequest:
+      allOf:
+        - $ref: "#/components/schemas/CustomerMutable"
+    CustomerMutable:
+      type: object
+      required: [empresaId, tipoPessoa, nome]
+      additionalProperties: false
+      properties:
+        empresaId: { type: string, format: uuid }
+        filialId: { type: string, format: uuid }
+        codigo: { type: string, minLength: 2, maxLength: 30 }
+        tipoPessoa: { $ref: "#/components/schemas/PersonType" }
+        nome: { type: string, minLength: 2, maxLength: 150 }
+        nomeFantasia: { type: string, maxLength: 150 }
+        cpfCnpj: { type: string, maxLength: 32 }
+        email: { type: string, format: email, maxLength: 180 }
+        telefone: { type: string, maxLength: 30 }
+        limiteCreditoCentavos: { type: integer, minimum: 0 }
+        vendedorResponsavelId: { type: string, format: uuid }
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 2, maxLength: 32 }
+        addresses:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/Address" }
+        contacts:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/Contact" }
+    CustomerPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Customer" }
+        nextCursor:
+          type: string
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+        correlationId: { type: string }
+  responses:
+    Unauthorized:
+      description: Não autenticado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Sem permissão
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Não encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflito de versão, status ou duplicidade
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Erro de validação
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

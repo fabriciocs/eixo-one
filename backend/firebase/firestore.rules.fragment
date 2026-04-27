@@ -1,0 +1,55 @@
+// FG-010 Cadastro de clientes — fragmento adaptável.
+// Integrar às funções de auth/grants reais do projeto.
+
+function isSignedIn() {
+  return request.auth != null;
+}
+
+function isSameTenant(tenantId) {
+  return isSignedIn() && request.auth.token.tenantId == tenantId;
+}
+
+function hasPermission(permission) {
+  return isSignedIn() && permission in request.auth.token.permissions;
+}
+
+function hasEmpresa(empresaId) {
+  return isSignedIn() && empresaId in request.auth.token.empresaIds;
+}
+
+function immutableFieldsNotChanged() {
+  return !request.resource.data.diff(resource.data).affectedKeys()
+    .hasAny(["tenantId", "createdAt", "createdBy", "deletedAt", "deletedBy", "version"]);
+}
+
+match /tenants/{tenantId}/customers/{customerId} {
+  allow read: if isSameTenant(tenantId)
+    && hasPermission("customers.read")
+    && hasEmpresa(resource.data.empresaId);
+
+  allow create: if isSameTenant(tenantId)
+    && hasPermission("customers.create")
+    && hasEmpresa(request.resource.data.empresaId)
+    && request.resource.data.tenantId == tenantId
+    && request.resource.data.keys().hasOnly([
+      "tenantId", "empresaId", "filialId", "codigo", "tipoPessoa", "nome",
+      "nomeNormalizado", "nomeFantasia", "cpfCnpjMascarado", "cpfCnpjNormalizado",
+      "documentoEstrangeiro", "email", "emailNormalizado", "telefone",
+      "telefoneNormalizado", "limiteCreditoCentavos", "vendedorResponsavelId",
+      "status", "tags", "addresses", "contacts", "observacao", "metadata",
+      "createdAt", "createdBy", "updatedAt", "updatedBy", "version"
+    ]);
+
+  allow update: if isSameTenant(tenantId)
+    && hasPermission("customers.update")
+    && hasEmpresa(resource.data.empresaId)
+    && immutableFieldsNotChanged();
+
+  allow delete: if false;
+}
+
+match /tenants/{tenantId}/customers/{customerId}/auditEvents/{eventId} {
+  allow read: if isSameTenant(tenantId)
+    && hasPermission("customers.audit.read");
+  allow create, update, delete: if false;
+}
