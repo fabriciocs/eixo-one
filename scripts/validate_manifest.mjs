@@ -8,7 +8,6 @@ const required = [
   "backend/apinode/src/modules/base-governance/fg-008/service.ts",
   "backend/apinode/src/modules/base-governance/fg-008/routes.ts",
   "backend/apinode/src/modules/base-governance/fg-008/repository.ts",
-  "apps/mobileflutter/lib/features/integrations_api_webhooks/presentation/integrations_page.dart",
   "firebase/rules/firestore.rules",
   "openapi/fg-008-integrations.openapi.yaml"
 ];
