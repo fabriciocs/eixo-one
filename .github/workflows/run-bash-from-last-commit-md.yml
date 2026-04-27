@@ -1,6 +1,9 @@
 name: Extract Source ZIP And Optional Bash From Last Commit
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       dry_run:
@@ -35,10 +38,8 @@ permissions:
 jobs:
   extract-source-zip-and-optional-bash:
     name: Detect ZIP, extract source files and optionally run Markdown bash
+    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
-
-    env:
-      EXTRACT_DESTINATION: ${{ inputs.extract_destination }}
 
     steps:
       # Faz checkout do repositório para ler o último commit e acessar arquivos versionados.
@@ -46,6 +47,49 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+
+      # Resolve os valores do workflow para suportar execução manual e automática via push.
+      - name: Resolve workflow options
+        id: resolve_options
+        shell: bash
+        env:
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_EXTRACT_DESTINATION: ${{ inputs.extract_destination }}
+          INPUT_EXECUTE_BASH_FROM_MARKDOWN: ${{ inputs.execute_bash_from_markdown }}
+          INPUT_COMMIT_EXTRACTED_FILES: ${{ inputs.commit_extracted_files }}
+          INPUT_COMMIT_MESSAGE_PREFIX: ${{ inputs.commit_message_prefix }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            DRY_RUN="${INPUT_DRY_RUN}"
+            EXTRACT_DESTINATION_VALUE="${INPUT_EXTRACT_DESTINATION}"
+            EXECUTE_BASH_FROM_MARKDOWN_VALUE="${INPUT_EXECUTE_BASH_FROM_MARKDOWN}"
+            COMMIT_EXTRACTED_FILES_VALUE="${INPUT_COMMIT_EXTRACTED_FILES}"
+            COMMIT_MESSAGE_PREFIX_VALUE="${INPUT_COMMIT_MESSAGE_PREFIX}"
+          else
+            DRY_RUN="false"
+            EXTRACT_DESTINATION_VALUE="."
+            EXECUTE_BASH_FROM_MARKDOWN_VALUE="true"
+            COMMIT_EXTRACTED_FILES_VALUE="true"
+            COMMIT_MESSAGE_PREFIX_VALUE="chore(actions): apply extracted source zip"
+          fi
+
+          {
+            echo "dry_run=${DRY_RUN}"
+            echo "extract_destination=${EXTRACT_DESTINATION_VALUE}"
+            echo "execute_bash_from_markdown=${EXECUTE_BASH_FROM_MARKDOWN_VALUE}"
+            echo "commit_extracted_files=${COMMIT_EXTRACTED_FILES_VALUE}"
+            echo "commit_message_prefix=${COMMIT_MESSAGE_PREFIX_VALUE}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "DRY_RUN=${DRY_RUN}"
+            echo "EXTRACT_DESTINATION=${EXTRACT_DESTINATION_VALUE}"
+            echo "EXECUTE_BASH_FROM_MARKDOWN=${EXECUTE_BASH_FROM_MARKDOWN_VALUE}"
+            echo "COMMIT_EXTRACTED_FILES=${COMMIT_EXTRACTED_FILES_VALUE}"
+            echo "COMMIT_MESSAGE_PREFIX=${COMMIT_MESSAGE_PREFIX_VALUE}"
+          } >> "${GITHUB_ENV}"
 
       - name: Set extracted script path
         shell: bash
@@ -67,15 +111,26 @@ jobs:
           printf '%s\n' "${COMMIT_MESSAGE}"
           echo "--------------------------------------------------"
 
+          NORMALIZED_COMMIT_MESSAGE="$(
+            printf '%s\n' "${COMMIT_MESSAGE}" | tr '\\' '/'
+          )"
+
           ZIP_FILE="$(
-            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.zip)'               | head -n 1 || true
+            printf '%s\n' "${NORMALIZED_COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.zip)'               | head -n 1 || true
           )"
 
           MARKDOWN_FILE="$(
-            printf '%s\n' "${COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
+            printf '%s\n' "${NORMALIZED_COMMIT_MESSAGE}"               | grep -Eio '([A-Za-z0-9._/-]+\.md)'               | head -n 1 || true
           )"
 
           if [[ -z "${ZIP_FILE}" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+              echo "Nenhum arquivo .zip foi encontrado na mensagem do último commit. Encerrando sem processamento."
+              echo "should_process=false" >> "${GITHUB_OUTPUT}"
+              echo "markdown_file=" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+
             echo "Erro: nenhum arquivo .zip foi encontrado na mensagem do último commit."
             echo "Exemplo de mensagem válida:"
             echo "feat: aplicar fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip"
@@ -120,6 +175,7 @@ jobs:
             echo "Nenhum Markdown válido detectado. Apenas o ZIP será processado."
           fi
 
+          echo "should_process=true" >> "${GITHUB_OUTPUT}"
           echo "zip_file=${ZIP_FILE}" >> "${GITHUB_OUTPUT}"
           echo "markdown_file=${MARKDOWN_FILE}" >> "${GITHUB_OUTPUT}"
           echo "ZIP_FILE=${ZIP_FILE}" >> "${GITHUB_ENV}"
@@ -127,6 +183,7 @@ jobs:
 
       # Valida o diretório de extração para evitar escrita fora do workspace.
       - name: Validate extraction destination
+        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -148,6 +205,7 @@ jobs:
 
       # Testa a integridade do ZIP antes de listar ou extrair.
       - name: Test ZIP integrity
+        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -156,6 +214,7 @@ jobs:
 
       # Lista o conteúdo do ZIP para auditoria no log.
       - name: List ZIP contents
+        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -167,6 +226,7 @@ jobs:
 
       # Proteção contra Zip Slip: bloqueia caminhos absolutos ou traversal dentro do ZIP.
       - name: Validate ZIP internal paths
+        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -189,7 +249,7 @@ jobs:
       # Mantém a melhoria anterior: se a mensagem do commit citar um .md,
       # extrai somente blocos delimitados por ```bash e ```.
       - name: Extract bash blocks from Markdown
-        if: ${{ steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -238,7 +298,7 @@ jobs:
 
       # Exibe os comandos extraídos do Markdown, quando houver.
       - name: Show extracted bash commands
-        if: ${{ steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -249,9 +309,16 @@ jobs:
           cat "${EXTRACTED_SCRIPT}"
           echo "=================================================="
 
-      # Modo seguro padrão: valida, lista e mostra o que seria feito, mas não extrai nem executa.
+      - name: Report no ZIP reference on push
+        if: ${{ steps.detect_files.outputs.should_process != 'true' }}
+        shell: bash
+        run: |
+          echo "Nenhum .zip foi referenciado na mensagem do último commit."
+          echo "O workflow foi disparado por push na main e encerrou sem alterações."
+
+      # Quando dry_run estiver ativo, apenas valida e mostra o que seria feito.
       - name: Stop in dry run mode
-        if: ${{ inputs.dry_run == true }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run == 'true' }}
         shell: bash
         run: |
           echo "Dry run ativado."
@@ -260,14 +327,14 @@ jobs:
 
           if [[ -n "${MARKDOWN_FILE}" ]]; then
             echo "Markdown detectado: ${MARKDOWN_FILE}"
-            echo "execute_bash_from_markdown=${{ inputs.execute_bash_from_markdown }}"
+            echo "execute_bash_from_markdown=${EXECUTE_BASH_FROM_MARKDOWN}"
           fi
 
           echo "Nenhum arquivo foi extraído e nenhum comando bash foi executado."
 
       # Extrai o ZIP apenas quando dry_run = false.
       - name: Extract ZIP contents
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -278,9 +345,9 @@ jobs:
           echo "ZIP: ${ZIP_FILE}"
           echo "Destino: ${EXTRACT_DESTINATION}"
 
-      # Execução opcional dos blocos bash do Markdown, desativada por padrão por segurança.
+      # Executa os blocos bash do Markdown apenas quando essa opção estiver habilitada.
       - name: Execute extracted bash commands from Markdown
-        if: ${{ inputs.dry_run == false && inputs.execute_bash_from_markdown == true && steps.detect_files.outputs.markdown_file != '' }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.execute_bash_from_markdown == 'true' && steps.detect_files.outputs.markdown_file != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -294,7 +361,7 @@ jobs:
 
       # Mostra alterações após extração e/ou execução opcional.
       - name: Show repository changes
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -303,7 +370,7 @@ jobs:
 
       # Commit automático opcional.
       - name: Commit and push changes
-        if: ${{ inputs.dry_run == false && inputs.commit_extracted_files == true }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.commit_extracted_files == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -322,12 +389,12 @@ jobs:
             git add "${MARKDOWN_FILE}" || true
           fi
 
-          git commit -m "${{ inputs.commit_message_prefix }}: ${ZIP_FILE}"
+          git commit -m "${COMMIT_MESSAGE_PREFIX}: ${ZIP_FILE}"
           git push
 
       # Mensagem final quando o commit automático não foi ativado.
       - name: Report manual commit required
-        if: ${{ inputs.dry_run == false && inputs.commit_extracted_files == false }}
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.resolve_options.outputs.dry_run != 'true' && steps.resolve_options.outputs.commit_extracted_files != 'true' }}
         shell: bash
         run: |
           echo "Processamento concluído sem commit automático."
