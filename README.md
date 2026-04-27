@@ -2,6 +2,7 @@
 
 Entrega exemplar para o monorepo EixoOne quando o repositório real não foi fornecido.
  
+ 
 Stack assumida a partir das planilhas recebidas:
 - Backend: Node.js + TypeScript + Fastify em Cloud Run.
 - Auth: Firebase Auth com custom claims.
