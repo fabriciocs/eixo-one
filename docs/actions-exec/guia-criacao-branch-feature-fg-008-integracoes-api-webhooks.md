@@ -19,7 +19,7 @@ feat: aplicar docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atu
 
 ## Exemplo de comandos
 
-```text
+```bash
 git add docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip
 git add docs/actions-exec/guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md
 git commit -m "feat: aplicar docs/actions-exec/fg-008-integracoes-api-webhooks_codigo-fonte_atualizado.zip usando docs/actions-exec/guia-criacao-branch-feature-fg-008-integracoes-api-webhooks.md"
@@ -48,4 +48,3 @@ O workflow valida:
 - destino de extração relativo ao workspace.
 
 Em cenários mais sensíveis, prefira uma primeira execução com `dry_run = true` para revisar o ZIP e os comandos antes da aplicação real.
-

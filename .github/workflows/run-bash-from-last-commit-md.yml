@@ -246,6 +246,20 @@ jobs:
 
           echo "Caminhos internos do ZIP validados com sucesso."
 
+      # O pacote deve trazer codigo-fonte/ como raiz lógica para aplicar no repositório.
+      - name: Validate source root inside ZIP
+        if: ${{ steps.detect_files.outputs.should_process == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! zipinfo -1 "${ZIP_FILE}" | grep -Eq '^codigo-fonte/[^/].*'; then
+            echo "Erro: o ZIP precisa conter arquivos dentro de codigo-fonte/."
+            exit 1
+          fi
+
+          echo "Raiz codigo-fonte/ encontrada no ZIP."
+
       # Mantém a melhoria anterior: se a mensagem do commit citar um .md,
       # extrai somente blocos delimitados por ```bash e ```.
       - name: Extract bash blocks from Markdown
@@ -347,10 +361,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          unzip -o "${ZIP_FILE}" -d "${EXTRACT_DESTINATION}"
+          TEMP_EXTRACT_DIR="$(mktemp -d)"
+          trap 'rm -rf "${TEMP_EXTRACT_DIR}"' EXIT
+
+          unzip -q "${ZIP_FILE}" -d "${TEMP_EXTRACT_DIR}"
+          mkdir -p "${EXTRACT_DESTINATION}"
+
+          shopt -s dotglob nullglob
+          cp -R "${TEMP_EXTRACT_DIR}/codigo-fonte/"* "${EXTRACT_DESTINATION}/"
 
           echo "ZIP extraído com sucesso."
           echo "ZIP: ${ZIP_FILE}"
+          echo "Origem aplicada: codigo-fonte/"
           echo "Destino: ${EXTRACT_DESTINATION}"
 
       # Executa os blocos bash do Markdown apenas quando essa opção estiver habilitada.
