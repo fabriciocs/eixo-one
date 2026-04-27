@@ -7,7 +7,9 @@ import {
   applyEmulatorEnvironment,
   emulatorConfig,
   readSeedStorageContent,
+  seedAuditLogs,
   seedAuthUsers,
+  seedBaseGovernanceRoles,
   seedGovernanceCompanies,
   seedGovernanceConsolidationRuns,
   seedGovernanceContexts,
@@ -85,6 +87,22 @@ export async function seedEmulators() {
 
   for (const user of seedUsers) {
     batch.set(firestore.collection('users').doc(user.id), user, { merge: true });
+  }
+
+  for (const role of seedBaseGovernanceRoles) {
+    batch.set(firestore.collection('roles').doc(role.roleId), role, {
+      merge: true,
+    });
+  }
+
+  for (const auditEvent of seedAuditLogs) {
+    batch.set(
+      firestore
+        .collection('audit_logs')
+        .doc(`${auditEvent.entityType}_${auditEvent.entityId}_${auditEvent.createdAt}`),
+      auditEvent,
+      { merge: true },
+    );
   }
 
   for (const company of seedGovernanceCompanies) {
@@ -195,7 +213,7 @@ export async function seedEmulators() {
     `[seed-emulators] Firestore organizations=${seedOrganizations.length} users=${seedUsers.length}.`,
   );
   console.log(
-    `[seed-emulators] Governance companies=${seedGovernanceCompanies.length} establishments=${seedGovernanceEstablishments.length} grants=${seedGovernanceGrants.length}.`,
+    `[seed-emulators] Governance roles=${seedBaseGovernanceRoles.length} auditLogs=${seedAuditLogs.length} companies=${seedGovernanceCompanies.length} establishments=${seedGovernanceEstablishments.length} grants=${seedGovernanceGrants.length}.`,
   );
   console.log(
     `[seed-emulators] Storage bucket=${emulatorConfig.storageBucket} object=${seedStorageObject.path}.`,
