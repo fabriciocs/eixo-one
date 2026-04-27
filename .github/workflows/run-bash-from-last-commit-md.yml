@@ -441,6 +441,34 @@ jobs:
           cat "${EXTRACTED_SCRIPT}"
           echo "=================================================="
 
+      # Detecta dependencias de runtime no script extraido para preparar o ambiente antes da execucao.
+      - name: Detect extracted bash runtime requirements
+        id: detect_runtime_requirements
+        if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_markdown_files == 'true' && steps.extract_bash.outputs.has_bash_blocks == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REQUIRES_FLUTTER="false"
+
+          if grep -Eq '(^|[[:space:]])flutter([[:space:]]|$)' "${EXTRACTED_SCRIPT}"; then
+            REQUIRES_FLUTTER="true"
+          fi
+
+          echo "requires_flutter=${REQUIRES_FLUTTER}" >> "${GITHUB_OUTPUT}"
+
+          echo "Requisitos detectados no script extraido:"
+          echo "requires_flutter=${REQUIRES_FLUTTER}"
+
+      # Alinha o ambiente com o pipeline principal quando o script extraido chama flutter.
+      - name: Setup Flutter
+        if: ${{ steps.detect_runtime_requirements.outputs.requires_flutter == 'true' }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.7
+          channel: stable
+          cache: true
+
       - name: Report no action files changed on push
         if: ${{ steps.detect_files.outputs.should_process != 'true' }}
         shell: bash
