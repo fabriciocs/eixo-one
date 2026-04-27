@@ -5,6 +5,8 @@ export const BASE_GOVERNANCE_PERMISSIONS = {
   rolesManage: 'roles.manage',
   settingsRead: 'settings.read',
   settingsManage: 'settings.manage',
+  notificationsRead: 'notifications.read',
+  notificationsManage: 'notifications.manage',
   auditRead: 'audit.read',
   dataJobsRead: 'data_jobs.read',
   dataJobsManage: 'data_jobs.manage',
@@ -57,6 +59,23 @@ export const permissionCatalog: PermissionCatalogEntry[] = [
     description:
       'Atualiza parametros sensiveis, reverte para padrao e registra auditoria.',
     moduleKey: 'settings',
+    actionKey: 'manage',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
+    key: 'notifications.read',
+    label: 'Consultar notificacoes',
+    description: 'Lista templates, filas e entregas de comunicacao do tenant.',
+    moduleKey: 'notifications',
+    actionKey: 'read',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
+    key: 'notifications.manage',
+    label: 'Gerenciar notificacoes',
+    description:
+      'Cria templates, dispara envios e reprocessa falhas com auditoria.',
+    moduleKey: 'notifications',
     actionKey: 'manage',
     scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
   },

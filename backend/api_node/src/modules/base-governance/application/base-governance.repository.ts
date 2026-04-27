@@ -3,12 +3,19 @@ import type {
   BaseGovernanceRole,
   BaseGovernanceRoleStatus,
   BaseGovernanceSetting,
+  CreateNotificationTemplateRequest,
   DataJob,
   DataJobEntity,
   DataJobStatus,
   DataJobType,
+  ListNotificationDeliveriesQuery,
+  ListNotificationTemplatesQuery,
+  NotificationDelivery,
+  NotificationTemplate,
   ListSettingsQuery,
   ResetSettingRequest,
+  RetryNotificationRequest,
+  SendNotificationRequest,
   SettingScopeType,
   UpdateSettingRequest,
 } from '@eixoone/shared-contracts';
@@ -50,6 +57,24 @@ export type ListDataJobsFilters = {
   entity?: DataJobEntity;
   type?: DataJobType;
   status?: DataJobStatus;
+  page: number;
+  pageSize: number;
+};
+
+export type ListNotificationTemplatesFilters = {
+  search?: string;
+  channel?: ListNotificationTemplatesQuery['channel'];
+  eventKey?: string;
+  status?: ListNotificationTemplatesQuery['status'];
+  page: number;
+  pageSize: number;
+};
+
+export type ListNotificationDeliveriesFilters = {
+  search?: string;
+  channel?: ListNotificationDeliveriesQuery['channel'];
+  status?: ListNotificationDeliveriesQuery['status'];
+  templateKey?: string;
   page: number;
   pageSize: number;
 };
@@ -98,6 +123,35 @@ export interface BaseGovernanceRepository {
     expectedVersion: number;
     setting: BaseGovernanceSetting;
   }): Promise<BaseGovernanceSetting>;
+  listNotificationTemplates(
+    tenantId: string,
+    filters: ListNotificationTemplatesFilters,
+  ): Promise<BaseGovernanceListResult<NotificationTemplate>>;
+  findNotificationTemplateById(
+    tenantId: string,
+    templateId: string,
+  ): Promise<NotificationTemplate | null>;
+  findNotificationTemplateByKey(
+    tenantId: string,
+    templateKey: string,
+  ): Promise<NotificationTemplate | null>;
+  createNotificationTemplate(
+    template: NotificationTemplate,
+  ): Promise<NotificationTemplate>;
+  listNotificationDeliveries(
+    tenantId: string,
+    filters: ListNotificationDeliveriesFilters,
+  ): Promise<BaseGovernanceListResult<NotificationDelivery>>;
+  findNotificationDeliveryById(
+    tenantId: string,
+    deliveryId: string,
+  ): Promise<NotificationDelivery | null>;
+  createNotificationDelivery(
+    delivery: NotificationDelivery,
+  ): Promise<NotificationDelivery>;
+  saveNotificationDelivery(
+    delivery: NotificationDelivery,
+  ): Promise<NotificationDelivery>;
   listAudit(
     tenantId: string,
     filters: ListAuditFilters,
