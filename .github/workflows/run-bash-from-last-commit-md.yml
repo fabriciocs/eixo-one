@@ -132,7 +132,35 @@ jobs:
           )"
 
           if [[ -z "${ZIP_FILES}" && -z "${MARKDOWN_FILES}" ]]; then
-            echo "Nenhum arquivo .zip ou .md criado/alterado em docs/actions-exec/. Encerrando sem processamento."
+            echo "Nenhum .zip ou .md criado/alterado no último commit. Usando arquivos mais recentes em docs/actions-exec/."
+
+            ZIP_FILES="$(
+              git ls-files 'docs/actions-exec/*.zip' \
+                | while IFS= read -r file_path; do
+                    [[ -z "${file_path}" ]] && continue
+                    printf '%s\t%s\n' "$(git log -1 --format=%ct -- "${file_path}")" "${file_path}"
+                  done \
+                | sort -rn \
+                | head -n 1 \
+                | cut -f2- \
+                || true
+            )"
+
+            MARKDOWN_FILES="$(
+              git ls-files 'docs/actions-exec/*.md' \
+                | while IFS= read -r file_path; do
+                    [[ -z "${file_path}" ]] && continue
+                    printf '%s\t%s\n' "$(git log -1 --format=%ct -- "${file_path}")" "${file_path}"
+                  done \
+                | sort -rn \
+                | head -n 1 \
+                | cut -f2- \
+                || true
+            )"
+          fi
+
+          if [[ -z "${ZIP_FILES}" && -z "${MARKDOWN_FILES}" ]]; then
+            echo "Nenhum arquivo .zip ou .md encontrado em docs/actions-exec/. Encerrando sem processamento."
             echo "should_process=false" >> "${GITHUB_OUTPUT}"
             echo "has_zip_files=false" >> "${GITHUB_OUTPUT}"
             echo "has_markdown_files=false" >> "${GITHUB_OUTPUT}"
