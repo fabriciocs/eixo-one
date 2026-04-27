@@ -333,7 +333,7 @@ jobs:
 
           echo "Raiz codigo-fonte/ encontrada nos ZIPs."
 
-      # Extrai blocos delimitados por ```bash e ``` dos Markdowns detectados.
+      # Extrai apenas blocos ```bash executaveis, marcados com <!-- actions-exec:run -->.
       - name: Extract bash blocks from Markdown
         id: extract_bash
         if: ${{ steps.detect_files.outputs.should_process == 'true' && steps.detect_files.outputs.has_markdown_files == 'true' }}
@@ -347,40 +347,75 @@ jobs:
             [[ -z "${markdown_file}" ]] && continue
             MARKDOWN_FILE="${markdown_file}" awk '
               BEGIN {
-                in_bash_block = 0
-                bash_block_count = 0
+                in_executable_bash_block = 0
+                in_ignored_bash_block = 0
+                executable_bash_block_count = 0
+                pending_run_marker = 0
               }
 
-              /^```bash[[:space:]]*$/ {
-                in_bash_block = 1
-                bash_block_count++
-                print ""
-                print "# ---- bash block " bash_block_count " from " ENVIRON["MARKDOWN_FILE"] " ----"
+              /^<!--[[:space:]]*actions-exec:run[[:space:]]*-->[[:space:]]*$/ {
+                if (in_executable_bash_block == 0 && in_ignored_bash_block == 0) {
+                  pending_run_marker = 1
+                }
+                next
+              }
+
+              /^```bash([[:space:]].*)?$/ {
+                if (pending_run_marker == 1) {
+                  in_executable_bash_block = 1
+                  pending_run_marker = 0
+                  executable_bash_block_count++
+                  print ""
+                  print "# ---- executable bash block " executable_bash_block_count " from " ENVIRON["MARKDOWN_FILE"] " ----"
+                } else {
+                  in_ignored_bash_block = 1
+                }
                 next
               }
 
               /^```[[:space:]]*$/ {
-                if (in_bash_block == 1) {
-                  in_bash_block = 0
+                if (in_executable_bash_block == 1) {
+                  in_executable_bash_block = 0
                   print ""
+                  next
+                }
+
+                if (in_ignored_bash_block == 1) {
+                  in_ignored_bash_block = 0
+                  next
+                }
+
+                if (pending_run_marker == 1) {
+                  pending_run_marker = 0
+                }
+                next
+              }
+
+              /^[[:space:]]*$/ {
+                if (in_executable_bash_block == 1) {
+                  print
                 }
                 next
               }
 
               {
-                if (in_bash_block == 1) {
+                if (pending_run_marker == 1 && in_executable_bash_block == 0 && in_ignored_bash_block == 0) {
+                  pending_run_marker = 0
+                }
+
+                if (in_executable_bash_block == 1) {
                   print
                 }
               }
 
               END {
-                if (in_bash_block == 1) {
+                if (in_executable_bash_block == 1 || in_ignored_bash_block == 1) {
                   print "Erro: existe um bloco ```bash sem fechamento com ``` em " ENVIRON["MARKDOWN_FILE"] "." > "/dev/stderr"
                   exit 2
                 }
 
-                if (bash_block_count == 0) {
-                  print "Aviso: nenhum bloco ```bash foi encontrado em " ENVIRON["MARKDOWN_FILE"] "." > "/dev/stderr"
+                if (executable_bash_block_count == 0) {
+                  print "Aviso: nenhum bloco ```bash executavel foi encontrado em " ENVIRON["MARKDOWN_FILE"] ". Use <!-- actions-exec:run --> imediatamente antes do bloco a executar." > "/dev/stderr"
                 }
               }
             ' "${markdown_file}" >> "${EXTRACTED_SCRIPT}"
