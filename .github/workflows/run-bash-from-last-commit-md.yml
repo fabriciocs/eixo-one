@@ -414,9 +414,6 @@ jobs:
                   exit 2
                 }
 
-                if (executable_bash_block_count == 0) {
-                  print "Aviso: nenhum bloco ```bash executavel foi encontrado em " ENVIRON["MARKDOWN_FILE"] ". Use <!-- actions-exec:run --> imediatamente antes do bloco a executar." > "/dev/stderr"
-                }
               }
             ' "${markdown_file}" >> "${EXTRACTED_SCRIPT}"
           done <<< "${MARKDOWN_FILES}"
@@ -427,7 +424,7 @@ jobs:
             echo "has_bash_blocks=true" >> "${GITHUB_OUTPUT}"
           else
             echo "has_bash_blocks=false" >> "${GITHUB_OUTPUT}"
-            echo "Nenhum comando bash executável foi encontrado no Markdown."
+            echo "Nenhum bloco bash foi marcado com <!-- actions-exec:run -->; nenhum comando sera executado."
           fi
 
       # Exibe os comandos extraídos do Markdown, quando houver.
