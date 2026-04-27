@@ -1,15 +1,30 @@
 {
-  "name": "@eixoone/fg-008-integracoes-api-webhooks",
-  "version": "0.1.0",
+  "name": "eixoone",
+  "version": "1.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "Entrega exemplar da FG-008 — Integrações, API e webhooks para EixoOne.",
+  "description": "EixoOne monorepo with shared contracts, API, Firebase, Flutter, and legacy FG-008 validation assets.",
+  "workspaces": [
+    "backend/api_node",
+    "packages/shared_contracts"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
     "test": "node tests/fg008.validation.test.cjs",
-    "validate:manifest": "node scripts/validate_manifest.mjs"
+    "validate:legacy": "npm run typecheck && npm test",
+    "validate:shared-contracts": "npm --prefix packages/shared_contracts run typecheck && npm --prefix packages/shared_contracts test",
+    "validate:api": "npm --prefix backend/api_node run typecheck && npm --prefix backend/api_node test",
+    "validate:manifest": "node scripts/validate_manifest.mjs",
+    "validate": "npm run validate:shared-contracts && npm run validate:api && npm run validate:manifest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.4.0"
+  },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=11 <12"
+  }
 }
-
