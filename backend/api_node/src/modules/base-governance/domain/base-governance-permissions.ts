@@ -5,7 +5,11 @@ export const BASE_GOVERNANCE_PERMISSIONS = {
   rolesManage: 'roles.manage',
   settingsRead: 'settings.read',
   settingsManage: 'settings.manage',
+  notificationsRead: 'notifications.read',
+  notificationsManage: 'notifications.manage',
   auditRead: 'audit.read',
+  dataJobsRead: 'data_jobs.read',
+  dataJobsManage: 'data_jobs.manage',
 } as const;
 
 export const permissionCatalog: PermissionCatalogEntry[] = [
@@ -59,12 +63,45 @@ export const permissionCatalog: PermissionCatalogEntry[] = [
     scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
   },
   {
+    key: 'notifications.read',
+    label: 'Consultar notificacoes',
+    description: 'Lista templates, filas e entregas de comunicacao do tenant.',
+    moduleKey: 'notifications',
+    actionKey: 'read',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
+    key: 'notifications.manage',
+    label: 'Gerenciar notificacoes',
+    description:
+      'Cria templates, dispara envios e reprocessa falhas com auditoria.',
+    moduleKey: 'notifications',
+    actionKey: 'manage',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
     key: 'audit.read',
     label: 'Consultar auditoria',
     description: 'Lê eventos auditaveis por entidade, usuario e correlacao.',
     moduleKey: 'audit',
     actionKey: 'read',
     scopeTypes: ['TENANT'],
+  },
+  {
+    key: 'data_jobs.read',
+    label: 'Consultar importacoes e exportacoes',
+    description: 'Lista jobs administrativos de importacao, exportacao e seus resultados.',
+    moduleKey: 'data_jobs',
+    actionKey: 'read',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
+  },
+  {
+    key: 'data_jobs.manage',
+    label: 'Gerenciar importacoes e exportacoes',
+    description: 'Cria jobs, executa processamentos e acompanha erros administrativos.',
+    moduleKey: 'data_jobs',
+    actionKey: 'manage',
+    scopeTypes: ['TENANT', 'COMPANY', 'ESTABLISHMENT'],
   },
   {
     key: 'governance.company.read',

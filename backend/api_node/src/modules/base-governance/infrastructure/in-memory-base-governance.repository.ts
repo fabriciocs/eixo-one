@@ -2,12 +2,18 @@ import type {
   AuditEvent,
   BaseGovernanceRole,
   BaseGovernanceSetting,
+  DataJob,
+  NotificationDelivery,
+  NotificationTemplate,
   SettingScopeType,
 } from '@eixoone/shared-contracts';
 
 import {
   baseGovernanceRoleSchema,
   baseGovernanceSettingSchema,
+  dataJobSchema,
+  notificationDeliverySchema,
+  notificationTemplateSchema,
 } from '@eixoone/shared-contracts';
 
 import { InMemoryAuditLogWriter } from '../../../core/audit/audit-log-writer.js';
@@ -16,6 +22,9 @@ import type {
   BaseGovernanceListResult,
   BaseGovernanceRepository,
   ListAuditFilters,
+  ListNotificationDeliveriesFilters,
+  ListNotificationTemplatesFilters,
+  ListDataJobsFilters,
   ListRolesFilters,
   ListSettingsFilters,
 } from '../application/base-governance.repository.js';
@@ -149,6 +158,21 @@ export class InMemoryBaseGovernanceRepository
       setting,
     ]),
   );
+  private readonly dataJobs = new Map<string, DataJob>(
+    seedDataJobs.map((job) => [this.dataJobKey(job.tenantId, job.id), job]),
+  );
+  private readonly notificationTemplates = new Map<string, NotificationTemplate>(
+    seedNotificationTemplates.map((template) => [
+      this.notificationTemplateKey(template.tenantId, template.templateId),
+      template,
+    ]),
+  );
+  private readonly notificationDeliveries = new Map<string, NotificationDelivery>(
+    seedNotificationDeliveries.map((delivery) => [
+      this.notificationDeliveryKey(delivery.tenantId, delivery.deliveryId),
+      delivery,
+    ]),
+  );
 
   constructor(private readonly auditLogWriter?: InMemoryAuditLogWriter) {}
 
@@ -170,6 +194,18 @@ export class InMemoryBaseGovernanceRepository
       input.companyId ?? '_',
       input.establishmentId ?? '_',
     ].join(':');
+  }
+
+  private dataJobKey(tenantId: string, jobId: string) {
+    return `${tenantId}:${jobId}`;
+  }
+
+  private notificationTemplateKey(tenantId: string, templateId: string) {
+    return `${tenantId}:${templateId}`;
+  }
+
+  private notificationDeliveryKey(tenantId: string, deliveryId: string) {
+    return `${tenantId}:${deliveryId}`;
   }
 
   async listRoles(
@@ -310,6 +346,125 @@ export class InMemoryBaseGovernanceRepository
     return parsedSetting;
   }
 
+  async listNotificationTemplates(
+    tenantId: string,
+    filters: ListNotificationTemplatesFilters,
+  ) {
+    const normalizedSearch = normalizeSearch(filters.search);
+    const templates = [...this.notificationTemplates.values()]
+      .filter((template) => template.tenantId === tenantId)
+      .filter((template) => !filters.channel || template.channel === filters.channel)
+      .filter((template) => !filters.eventKey || template.eventKey === filters.eventKey)
+      .filter((template) => !filters.status || template.status === filters.status)
+      .filter((template) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [
+          template.key,
+          template.label,
+          template.description ?? '',
+          template.eventKey,
+          template.channel,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
+
+    return paginate(templates, filters.page, filters.pageSize);
+  }
+
+  async findNotificationTemplateById(tenantId: string, templateId: string) {
+    return (
+      this.notificationTemplates.get(
+        this.notificationTemplateKey(tenantId, templateId),
+      ) ?? null
+    );
+  }
+
+  async findNotificationTemplateByKey(tenantId: string, templateKey: string) {
+    return (
+      [...this.notificationTemplates.values()].find(
+        (template) =>
+          template.tenantId === tenantId && template.key === templateKey,
+      ) ?? null
+    );
+  }
+
+  async createNotificationTemplate(template: NotificationTemplate) {
+    const parsedTemplate =
+      notificationTemplateSchema.parse(template) as NotificationTemplate;
+    this.notificationTemplates.set(
+      this.notificationTemplateKey(parsedTemplate.tenantId, parsedTemplate.templateId),
+      parsedTemplate,
+    );
+    return parsedTemplate;
+  }
+
+  async listNotificationDeliveries(
+    tenantId: string,
+    filters: ListNotificationDeliveriesFilters,
+  ) {
+    const normalizedSearch = normalizeSearch(filters.search);
+    const deliveries = [...this.notificationDeliveries.values()]
+      .filter((delivery) => delivery.tenantId === tenantId)
+      .filter((delivery) => !filters.channel || delivery.channel === filters.channel)
+      .filter((delivery) => !filters.status || delivery.status === filters.status)
+      .filter(
+        (delivery) => !filters.templateKey || delivery.templateKey === filters.templateKey,
+      )
+      .filter((delivery) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [
+          delivery.templateKey,
+          delivery.recipient,
+          delivery.channel,
+          delivery.status,
+          delivery.eventKey,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((left, right) => right.queuedAt.localeCompare(left.queuedAt));
+
+    return paginate(deliveries, filters.page, filters.pageSize);
+  }
+
+  async findNotificationDeliveryById(tenantId: string, deliveryId: string) {
+    return (
+      this.notificationDeliveries.get(
+        this.notificationDeliveryKey(tenantId, deliveryId),
+      ) ?? null
+    );
+  }
+
+  async createNotificationDelivery(delivery: NotificationDelivery) {
+    const parsedDelivery =
+      notificationDeliverySchema.parse(delivery) as NotificationDelivery;
+    this.notificationDeliveries.set(
+      this.notificationDeliveryKey(parsedDelivery.tenantId, parsedDelivery.deliveryId),
+      parsedDelivery,
+    );
+    return parsedDelivery;
+  }
+
+  async saveNotificationDelivery(delivery: NotificationDelivery) {
+    const parsedDelivery =
+      notificationDeliverySchema.parse(delivery) as NotificationDelivery;
+    this.notificationDeliveries.set(
+      this.notificationDeliveryKey(parsedDelivery.tenantId, parsedDelivery.deliveryId),
+      parsedDelivery,
+    );
+    return parsedDelivery;
+  }
+
   async listAudit(
     tenantId: string,
     filters: ListAuditFilters,
@@ -325,6 +480,47 @@ export class InMemoryBaseGovernanceRepository
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
     return paginate(events, filters.page, filters.pageSize);
+  }
+
+  async listDataJobs(
+    tenantId: string,
+    filters: ListDataJobsFilters,
+  ): Promise<BaseGovernanceListResult<DataJob>> {
+    const normalizedSearch = normalizeSearch(filters.search);
+    const jobs = [...this.dataJobs.values()]
+      .filter((job) => job.tenantId === tenantId)
+      .filter((job) => !filters.entity || job.entity === filters.entity)
+      .filter((job) => !filters.type || job.type === filters.type)
+      .filter((job) => !filters.status || job.status === filters.status)
+      .filter((job) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        return [job.fileName, job.entity, job.type, job.status]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    return paginate(jobs, filters.page, filters.pageSize);
+  }
+
+  async findDataJobById(tenantId: string, jobId: string) {
+    return this.dataJobs.get(this.dataJobKey(tenantId, jobId)) ?? null;
+  }
+
+  async createDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    this.dataJobs.set(this.dataJobKey(parsedJob.tenantId, parsedJob.id), parsedJob);
+    return parsedJob;
+  }
+
+  async saveDataJob(job: DataJob) {
+    const parsedJob = dataJobSchema.parse(job) as DataJob;
+    this.dataJobs.set(this.dataJobKey(parsedJob.tenantId, parsedJob.id), parsedJob);
+    return parsedJob;
   }
 
   async isReady() {
@@ -402,3 +598,122 @@ const seedSettings = [
     createdBy: 'system_seed',
   }),
 ] as const satisfies readonly BaseGovernanceSetting[];
+
+const seedDataJobs = [
+  dataJobSchema.parse({
+    id: 'job_seed_roles_export',
+    tenantId: 'tenant_demo',
+    type: 'export',
+    entity: 'roles',
+    format: 'csv',
+    status: 'completed',
+    fileName: 'roles-seed.csv',
+    filters: {},
+    totalRows: 2,
+    validRows: 2,
+    invalidRows: 0,
+    errors: [],
+    previewRows: [
+      {
+        rowNumber: 1,
+        values: {
+          key: 'platform_admin',
+          name: 'Platform admin',
+        },
+        valid: true,
+      },
+    ],
+    outputPreview: 'key,name\r\nplatform_admin,Platform admin',
+    createdBy: 'system_seed',
+    createdAt: '2026-04-26T18:30:00.000Z',
+    completedAt: '2026-04-26T18:30:02.000Z',
+  }),
+] as const satisfies readonly DataJob[];
+
+const seedNotificationTemplates = [
+  notificationTemplateSchema.parse({
+    templateId: 'ntf_invoice_overdue_email',
+    tenantId: 'tenant_demo',
+    key: 'notifications.invoice.overdue.email',
+    moduleKey: 'notifications',
+    label: 'Cobranca de vencimento',
+    description: 'Avisa clientes sobre documentos vencidos por e-mail.',
+    channel: 'email',
+    eventKey: 'invoice.overdue',
+    subject: 'Titulo vencido em aberto',
+    body: 'Olá {{customerName}}, identifiquei o título {{invoiceNumber}} em aberto.',
+    scopeType: 'TENANT',
+    requiresConsent: true,
+    allowAttachments: true,
+    retryLimit: 3,
+    status: 'active',
+    version: 1,
+    createdAt: '2026-04-26T18:40:00.000Z',
+    createdBy: 'system_seed',
+  }),
+  notificationTemplateSchema.parse({
+    templateId: 'ntf_approval_pending_whatsapp',
+    tenantId: 'tenant_demo',
+    key: 'notifications.approval.pending.whatsapp',
+    moduleKey: 'governance',
+    label: 'Aprovacao pendente',
+    description: 'Dispara alerta curto para aprovadores operacionais.',
+    channel: 'whatsapp',
+    eventKey: 'approval.pending',
+    body: 'Aprovacao pendente para {{documentCode}}.',
+    scopeType: 'COMPANY',
+    companyId: 'cmp_demo',
+    requiresConsent: true,
+    allowAttachments: false,
+    retryLimit: 2,
+    status: 'active',
+    version: 0,
+    createdAt: '2026-04-26T18:42:00.000Z',
+    createdBy: 'system_seed',
+  }),
+] as const satisfies readonly NotificationTemplate[];
+
+const seedNotificationDeliveries = [
+  notificationDeliverySchema.parse({
+    deliveryId: 'ndl_seed_invoice_overdue_001',
+    tenantId: 'tenant_demo',
+    templateId: 'ntf_invoice_overdue_email',
+    templateKey: 'notifications.invoice.overdue.email',
+    channel: 'email',
+    eventKey: 'invoice.overdue',
+    recipient: 'financeiro@cliente.com',
+    status: 'sent',
+    consentGranted: true,
+    attemptCount: 1,
+    maxAttempts: 3,
+    subject: 'Titulo vencido em aberto',
+    body: 'Olá Cliente, identifiquei o título FAT-182 em aberto.',
+    attachments: [],
+    metadata: { invoiceNumber: 'FAT-182' },
+    queuedAt: '2026-04-26T18:45:00.000Z',
+    sentAt: '2026-04-26T18:45:02.000Z',
+    updatedAt: '2026-04-26T18:45:02.000Z',
+    createdBy: 'system_seed',
+  }),
+  notificationDeliverySchema.parse({
+    deliveryId: 'ndl_seed_webhook_fail_001',
+    tenantId: 'tenant_demo',
+    templateId: 'ntf_invoice_overdue_email',
+    templateKey: 'notifications.invoice.overdue.email',
+    channel: 'webhook',
+    eventKey: 'invoice.overdue',
+    recipient: 'https://fail.example.com/webhook',
+    status: 'failed',
+    consentGranted: true,
+    attemptCount: 1,
+    maxAttempts: 3,
+    subject: 'Falha de webhook',
+    body: 'Entrega de teste com falha.',
+    attachments: [],
+    metadata: {},
+    lastError: 'HTTP 503',
+    queuedAt: '2026-04-26T18:50:00.000Z',
+    updatedAt: '2026-04-26T18:50:01.000Z',
+    createdBy: 'system_seed',
+  }),
+] as const satisfies readonly NotificationDelivery[];

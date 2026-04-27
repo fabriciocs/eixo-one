@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createRoleRequestSchema,
+  createExportJobRequestSchema,
+  createImportJobRequestSchema,
   consolidatedOverviewSchema,
   changeUserStatusCommandSchema,
   createConsolidationRunRequestSchema,
   createEstablishmentRequestSchema,
+  dataJobSchema,
   updateSettingRequestSchema,
   permissionCatalogEntrySchema,
   createSharingPolicyRequestSchema,
@@ -229,5 +232,64 @@ describe('shared contracts', () => {
 
     expect(setting.scopeType).toBe('COMPANY');
     expect(setting.expectedVersion).toBe(3);
+  });
+
+  it('accepts valid import and export administrative jobs', () => {
+    const importJob = createImportJobRequestSchema.parse({
+      entity: 'roles',
+      format: 'csv',
+      fileName: 'roles.csv',
+      mode: 'upsert',
+      mapping: [
+        {
+          sourceColumn: 'perfil',
+          targetField: 'name',
+          required: true,
+        },
+      ],
+      content: 'key,name,permissionKeys\nfinance.viewer,Financeiro leitura,roles.read',
+    });
+
+    const exportJob = createExportJobRequestSchema.parse({
+      entity: 'settings',
+      format: 'xlsx',
+      fileName: 'settings.xlsx',
+      filters: {
+        moduleKey: 'governance',
+      },
+    });
+
+    const storedJob = dataJobSchema.parse({
+      id: 'job_12345',
+      tenantId: 'tenant_demo',
+      type: 'import',
+      entity: 'roles',
+      format: 'csv',
+      status: 'validated',
+      fileName: 'roles.csv',
+      mode: 'simulation',
+      mapping: importJob.mapping,
+      filters: {},
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+      errors: [],
+      previewRows: [
+        {
+          rowNumber: 1,
+          values: {
+            key: 'finance.viewer',
+            name: 'Financeiro leitura',
+          },
+          valid: true,
+        },
+      ],
+      createdBy: 'user_admin',
+      createdAt: '2026-04-26T18:00:00.000Z',
+    });
+
+    expect(importJob.entity).toBe('roles');
+    expect(exportJob.format).toBe('xlsx');
+    expect(storedJob.previewRows).toHaveLength(1);
   });
 });

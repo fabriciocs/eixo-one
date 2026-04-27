@@ -1,10 +1,21 @@
 import {
+  createNotificationTemplateRequestSchema,
+  createExportJobRequestSchema,
+  createImportJobRequestSchema,
   createRoleRequestSchema,
+  dataJobIdSchema,
   listAuditEventsQuerySchema,
+  listDataJobsQuerySchema,
+  listNotificationDeliveriesQuerySchema,
+  listNotificationTemplatesQuerySchema,
   listRolesQuerySchema,
+  notificationDeliveryIdSchema,
   listSettingsQuerySchema,
   resetSettingRequestSchema,
+  runImportJobRequestSchema,
+  retryNotificationRequestSchema,
   roleIdSchema,
+  sendNotificationRequestSchema,
   settingKeySchema,
   updateRoleRequestSchema,
   updateSettingRequestSchema,
@@ -21,6 +32,14 @@ const roleIdParamsSchema = z.object({
 
 const settingKeyParamsSchema = z.object({
   settingKey: settingKeySchema,
+});
+
+const dataJobIdParamsSchema = z.object({
+  jobId: dataJobIdSchema,
+});
+
+const notificationDeliveryIdParamsSchema = z.object({
+  deliveryId: notificationDeliveryIdSchema,
 });
 
 export function createBaseGovernanceController(dependencies: AppDependencies) {
@@ -131,6 +150,94 @@ export function createBaseGovernanceController(dependencies: AppDependencies) {
 
       return sendSuccess(request, reply, setting);
     },
+    listNotificationTemplates: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const query = listNotificationTemplatesQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listNotificationTemplates(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        { items: result.items },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    createNotificationTemplate: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const body = createNotificationTemplateRequestSchema.parse(request.body);
+      const template = await dependencies.baseGovernanceService.createNotificationTemplate(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, template);
+    },
+    listNotificationDeliveries: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const query = listNotificationDeliveriesQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listNotificationDeliveries(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        { items: result.items },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    sendNotification: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = sendNotificationRequestSchema.parse(request.body);
+      const delivery = await dependencies.baseGovernanceService.sendNotification(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, delivery);
+    },
+    retryNotificationDelivery: async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => {
+      const params = notificationDeliveryIdParamsSchema.parse(request.params);
+      const body = retryNotificationRequestSchema.parse(request.body);
+      const delivery = await dependencies.baseGovernanceService.retryNotificationDelivery(
+        request.auth!,
+        params.deliveryId,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, delivery);
+    },
     listAuditEvents: async (request: FastifyRequest, reply: FastifyReply) => {
       const query = listAuditEventsQuerySchema.parse(request.query);
       const result = await dependencies.baseGovernanceService.listAuditEvents(
@@ -153,6 +260,63 @@ export function createBaseGovernanceController(dependencies: AppDependencies) {
           },
         },
       );
+    },
+    listDataJobs: async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = listDataJobsQuerySchema.parse(request.query);
+      const result = await dependencies.baseGovernanceService.listDataJobs(
+        request.auth!,
+        query,
+      );
+
+      return sendSuccess(
+        request,
+        reply,
+        {
+          items: result.items,
+        },
+        {
+          pagination: {
+            page: result.page,
+            pageSize: result.pageSize,
+            totalItems: result.totalItems,
+            hasNextPage: result.hasNextPage,
+          },
+        },
+      );
+    },
+    createImportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = createImportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.createImportJob(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, job);
+    },
+    runImportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const params = dataJobIdParamsSchema.parse(request.params);
+      const body = runImportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.runImportJob(
+        request.auth!,
+        params.jobId,
+        body,
+        request.context,
+      );
+
+      return sendSuccess(request, reply, job);
+    },
+    createExportJob: async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = createExportJobRequestSchema.parse(request.body);
+      const job = await dependencies.baseGovernanceService.createExportJob(
+        request.auth!,
+        body,
+        request.context,
+      );
+
+      reply.code(201);
+      return sendSuccess(request, reply, job);
     },
   };
 }

@@ -75,6 +75,8 @@ class InMemoryAuthRepository implements AuthRepository {
           'settings.read',
           'settings.manage',
           'audit.read',
+          'data_jobs.read',
+          'data_jobs.manage',
           'governance.company.read',
           'governance.company.create',
           'governance.company.update',
